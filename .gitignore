@@ -1,0 +1,10 @@
+node_modules/
+dist/
+# généré par scripts/copier-ocr.mjs (predev/prebuild)
+public/tesseract/
+# cache local de tesseract en dev
+*.traineddata
+tests/sortie.xlsx
+# notes de travail locales (prénoms, contexte privé)
+CLAUDE.md
+ETAT.md
