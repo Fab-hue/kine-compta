@@ -218,7 +218,7 @@ describe('suivi des paiements', () => {
   });
 });
 
-import { codeCreneau, creneauxDuJour, fusionner, montantCreneau, resumeMois, separer, type Creneau } from '../src/lib/creneaux';
+import { codeCreneau, creneauxDuJour, fusionner, lignesCreneau, montantCreneau, resumeMois, separer, type Creneau } from '../src/lib/creneaux';
 
 describe('créneaux', () => {
   const j = '2026-12-14';
@@ -264,8 +264,30 @@ describe('montants des créneaux', () => {
     expect(montantCreneau({ ...base, bim: true })).toMatchObject({ patient: 2.5, mutuelle: 29.14 });
     expect(montantCreneau(base)).toMatchObject({ patient: 6.25, mutuelle: 25.39 });
     expect(montantCreneau({ ...base, bim: true, pathologie: 'fa', domicile: true })).toMatchObject({ patient: 2, mutuelle: 32.81 });
-    expect(montantCreneau({ ...base, mode: 'totalite', pathologie: 'e', bim: true })).toMatchObject({ patient: 31.64, mutuelle: 0 });
+    expect(montantCreneau({ ...base, mode: 'totalite', pathologie: 'e', bim: true })).toMatchObject({ patient: 31.64, mutuelle: 0, intervention: 30.26 });
+    expect(montantCreneau({ ...base, mode: 'totalite' })).toMatchObject({ patient: 31.64, intervention: 25.39 });
+    expect(codeCreneau({ pathologie: 'fb60' })).toBe('564270');
+    expect(codeCreneau({ pathologie: 'perinatal', domicile: true })).toBe('561654');
+    expect(montantCreneau({ ...base, pathologie: 'fb60', domicile: true })).toMatchObject({ honoraires: 29.53, patient: 5.5, mutuelle: 24.03 });
     expect(montantCreneau({ ...base, statut: undefined })).toBeNull();
+  });
+  it('bilan, rapport, prestation E', () => {
+    const fa = { ...base, pathologie: 'fa' as const, supplements: ['rapport' as const] };
+    expect(lignesCreneau(fa).map((l) => l.code)).toEqual(['563010', '563076']);
+    expect(montantCreneau(fa)).toMatchObject({ honoraires: 66.26, patient: 6.37, mutuelle: 59.89 });
+    expect(montantCreneau({ ...base, supplements: ['bilan'], domicile: true })).toMatchObject({ honoraires: 42.19, mutuelle: 35.94 });
+    const e = { ...base, pathologie: 'e' as const, bim: true, supplements: ['prestation' as const, 'rapport' as const] };
+    expect(lignesCreneau(e).map((l) => l.code)).toEqual(['560652', '560711', '560696']);
+    expect(montantCreneau(e)).toMatchObject({ patient: r(1.38 + 0.87 + 1), mutuelle: r(30.26 + 33.75 + 6.44) });
+    // supplément d'une autre pathologie : ignoré
+    expect(lignesCreneau({ ...base, pathologie: 'perinatal', supplements: ['rapport'] })).toHaveLength(1);
+  });
+  it('part patient déjà payée en tiers payant', () => {
+    const c: Creneau = { ...base, statut: 'arecevoir', patientPaye: true };
+    expect(resumeMois([c], '2026-12')).toEqual({
+      paye: { totalite: 0, tiers: 0, nombre: 0, patient: 6.25, mutuelle: 0 },
+      arecevoir: { totalite: 0, tiers: 1, nombre: 1, patient: 0, mutuelle: 25.39 },
+    });
   });
   it('la fusion garde pathologie et domicile', () => {
     const j = '2026-12-14';

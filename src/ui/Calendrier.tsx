@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { enregistrer, supprimer } from '../lib/db';
 import {
-  codeCreneau, creneauxDuJour, DERNIER, estVide, fusionner, hhmm, montantCreneau, PAS, PATHOLOGIES, PREMIER, resumeMois, separer,
-  type Creneau, type Mode, type Pathologie, type Statut,
+  creneauxDuJour, DERNIER, estVide, fusionner, hhmm, lignesCreneau, montantCreneau, PAS, PATHOLOGIES, PREMIER, resumeMois, separer,
+  supplementsDe, type Creneau, type Mode, type Pathologie, type Statut, type Supplement,
 } from '../lib/creneaux';
 import { eur, formatDate, libelleMois, type Donnees } from './common';
 
@@ -25,13 +25,15 @@ const plage = (c: Creneau) => `${hhmm(c.debut)} – ${hhmm(c.fin)}`;
 const MODE_COURT: Record<Mode, string> = { totalite: 'Totalité', tiers: 'Tiers payant' };
 const STATUT_MOT: Record<Statut, string> = { paye: 'Payé', arecevoir: 'À recevoir' };
 
-/** Détails courts d'un créneau : « TP · BIM · FA · Dom. ». */
+/** Détails courts d'un créneau : « TP · BIM · FA · Dom. · Rapp. ». */
 const details = (c: Creneau, avecMode = true) =>
   [
     avecMode ? (c.mode === 'totalite' ? 'Tot.' : 'TP') : '',
-    c.mode !== 'totalite' && c.bim ? 'BIM' : '',
+    c.bim ? 'BIM' : '',
     c.pathologie && c.pathologie !== 'courant' ? PATHOLOGIES[c.pathologie].court : '',
     c.domicile ? 'Dom.' : '',
+    ...supplementsDe(c.pathologie).filter((s) => c.supplements?.includes(s.id)).map((s) => s.court),
+    c.patientPaye && c.statut === 'arecevoir' && c.mode !== 'totalite' ? 'P. payé' : '',
   ].filter(Boolean).join(' · ');
 
 /** Enregistre le créneau, ou l'efface s'il est redevenu un créneau vide de 30 min. */
@@ -71,6 +73,8 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
   const [pathologie, setPathologie] = useState<Pathologie>(c.pathologie ?? 'courant');
   const [bim, setBim] = useState(!!c.bim);
   const [domicile, setDomicile] = useState(!!c.domicile);
+  const [supplements, setSupplements] = useState<Supplement[]>(c.supplements ?? []);
+  const [patientPaye, setPatientPaye] = useState(!!c.patientPaye);
   const [commentaire, setCommentaire] = useState(c.commentaire ?? '');
   const [confirmer, setConfirmer] = useState(false);
   const i = jour.findIndex((x) => x.id === c.id);
@@ -85,8 +89,12 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
     if (statut) {
       Object.assign(x, { statut, mode });
       if (pathologie !== 'courant') x.pathologie = pathologie;
-      if (mode === 'tiers' && bim) x.bim = true;
+      if (bim) x.bim = true;
       if (domicile) x.domicile = true;
+      const possibles = supplementsDe(pathologie).map((s) => s.id);
+      const sup = supplements.filter((s) => possibles.includes(s));
+      if (sup.length) x.supplements = sup;
+      if (statut === 'arecevoir' && mode === 'tiers' && patientPaye) x.patientPaye = true;
     }
     if (commentaire.trim()) x.commentaire = commentaire.trim();
     return x;
@@ -117,6 +125,9 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
   };
 
   const montant = montantCreneau(courant(), d.reglages.conventionne);
+  const lignes = lignesCreneau(courant(), d.reglages.conventionne);
+  const basculer = (s: Supplement, oui: boolean) =>
+    setSupplements((l) => (oui ? [...l.filter((x) => x !== s), s] : l.filter((x) => x !== s)));
 
   const separation = async () => {
     await sauverCreneau(separer(courant()));
@@ -149,11 +160,14 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
               <label><input type="radio" name="mode" checked={mode === 'totalite'} onChange={() => setMode('totalite')} /> Totalité</label>
             </div>
             <div className="cases">
-              {mode === 'tiers' && (
-                <label><input type="checkbox" checked={bim} onChange={(e) => setBim(e.target.checked)} /> Patient BIM / VIPO</label>
-              )}
+              <label><input type="checkbox" checked={bim} onChange={(e) => setBim(e.target.checked)} /> Patient BIM / VIPO</label>
               <label><input type="checkbox" checked={domicile} onChange={(e) => setDomicile(e.target.checked)} /> À domicile</label>
             </div>
+            {statut === 'arecevoir' && mode === 'tiers' && (
+              <div className="cases">
+                <label><input type="checkbox" checked={patientPaye} onChange={(e) => setPatientPaye(e.target.checked)} /> Le patient a déjà payé sa part</label>
+              </div>
+            )}
           </>
         )}
       </fieldset>
@@ -168,13 +182,35 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
               </label>
             ))}
           </div>
+          {supplementsDe(pathologie).length > 0 && (
+            <div className="cases">
+              {supplementsDe(pathologie).map((s) => (
+                <label key={s.id}>
+                  <input type="checkbox" checked={supplements.includes(s.id)} onChange={(e) => basculer(s.id, e.target.checked)} /> {s.libelle}
+                </label>
+              ))}
+            </div>
+          )}
           {montant && (
-            <p className="cr-montant">
-              Code {codeCreneau({ pathologie, domicile })} · honoraires {eur(montant.honoraires)}
-              <br />
-              <strong>Patient : {eur(montant.patient)}</strong>
-              {mode === 'tiers' && <> · <strong>Mutuelle : {eur(montant.mutuelle)}</strong></>}
-            </p>
+            <div className="cr-montant">
+              {lignes.map((l) => (
+                <div key={l.code}>
+                  {l.libelle} · code {l.code} · honoraires {eur(l.montants.honoraires)}
+                  {mode === 'tiers' && <> (patient {eur(l.montants.patient)}, mutuelle {eur(l.montants.mutuelle)})</>}
+                </div>
+              ))}
+              {mode === 'tiers' ? (
+                <div>
+                  <strong>Patient : {eur(montant.patient)}</strong> · <strong>Mutuelle : {eur(montant.mutuelle)}</strong>
+                </div>
+              ) : (
+                <div>
+                  <strong>Patient : {eur(montant.patient)}</strong>
+                  <br />
+                  <span className="aide">La mutuelle lui rembourse {eur(montant.intervention)} ({bim ? 'BIM' : 'non BIM'}).</span>
+                </div>
+              )}
+            </div>
           )}
         </fieldset>
       )}
@@ -208,7 +244,9 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
 
 const montantTexte = (c: Creneau, d: Donnees) => {
   const m = montantCreneau(c, d.reglages.conventionne);
-  return m ? eur(m.patient + m.mutuelle) : '';
+  if (!m) return '';
+  // patient déjà payé : il ne reste que la part mutuelle
+  return c.statut === 'arecevoir' && c.mode !== 'totalite' && c.patientPaye ? `mutuelle ${eur(m.mutuelle)}` : eur(m.patient + m.mutuelle);
 };
 
 export default function Calendrier({ d }: { d: Donnees }) {
@@ -282,7 +320,7 @@ export default function Calendrier({ d }: { d: Donnees }) {
         <div className="cal-legende">
           <span><i className="cal-puce recu" /> vert = payé</span>
           <span><i className="cal-puce attente" /> rouge = à recevoir</span>
-          <span>✓ payé · ! à recevoir · TP = tiers payant · Tot. = totalité · Dom. = à domicile</span>
+          <span>✓ payé · ! à recevoir · TP = tiers payant · Tot. = totalité · Dom. = à domicile · Rapp. = rapport · Prest. = prestation liste E</span>
         </div>
         <p className="aide">Clique sur un créneau pour noter le paiement ou le fusionner avec le précédent / le suivant.</p>
       </section>
