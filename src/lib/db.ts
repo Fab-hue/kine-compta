@@ -62,7 +62,20 @@ type Store = 'patients' | 'seances' | 'tickets' | 'dispatchs' | 'mouvements' | '
 export const idDispatch = (numero: string, mutuelle?: string) =>
   `${numero}|${(mutuelle ?? '').trim().toLowerCase()}`;
 
+/** Appelé si la mise à niveau de la base attend qu'une ancienne version de l'app se ferme. */
+const ecouteursBlocage: (() => void)[] = [];
+export const surBlocage = (f: () => void) => ecouteursBlocage.push(f);
+
 const db = openDB<Schema>('kine-compta', 4, {
+  // une autre fenêtre (ancienne version de l'app) garde la base ouverte : prévenir la kiné
+  blocked() {
+    for (const f of ecouteursBlocage) f();
+  },
+  // une version plus récente de l'app veut mettre la base à niveau : la libérer et recharger
+  async blocking() {
+    (await db).close();
+    location.reload();
+  },
   upgrade(d, ancienne) {
     if (ancienne < 1) {
       d.createObjectStore('patients', { keyPath: 'id' });

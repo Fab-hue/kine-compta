@@ -1,8 +1,19 @@
 // Agenda en créneaux de 30 min (8h-17h), sans nom de patient (RGPD) :
-// statut payé / à recevoir, mode totalité / tiers payant, commentaire libre (initiales).
+// statut payé / à recevoir, mode totalité / tiers payant, pathologie, BIM, domicile,
+// commentaire libre (initiales).
+import { calculer, findTarif, type Montants } from './tarifs';
 
 export type Statut = 'paye' | 'arecevoir';
 export type Mode = 'totalite' | 'tiers';
+export type Pathologie = 'courant' | 'fa' | 'fb' | 'e';
+
+/** Codes INAMI d'une séance de 30 min (cabinet / domicile), grille du 01-01-2026. */
+export const PATHOLOGIES: Record<Pathologie, { libelle: string; court: string; cabinet: string; domicile: string }> = {
+  courant: { libelle: 'Courant', court: 'Cour.', cabinet: '560011', domicile: '560313' },
+  fa: { libelle: 'FA', court: 'FA', cabinet: '563010', domicile: '563312' },
+  fb: { libelle: 'FB', court: 'FB', cabinet: '563614', domicile: '563916' },
+  e: { libelle: 'E', court: 'E', cabinet: '560652', domicile: '561013' },
+};
 
 export interface Creneau {
   /** `${date}|HH:MM` du début */
@@ -14,6 +25,11 @@ export interface Creneau {
   fin: number;
   statut?: Statut;
   mode?: Mode;
+  /** défaut : courant */
+  pathologie?: Pathologie;
+  /** patient BIM / VIPO (compte seulement en tiers payant) */
+  bim?: boolean;
+  domicile?: boolean;
   commentaire?: string;
 }
 
@@ -42,7 +58,8 @@ export function creneauxDuJour(date: string, enregistres: Creneau[]): Creneau[] 
   return jour;
 }
 
-const donnees = (c: Creneau) => ({ statut: c.statut, mode: c.mode, commentaire: c.commentaire });
+const CHAMPS = ['statut', 'mode', 'pathologie', 'bim', 'domicile', 'commentaire'] as const;
+const donnees = (c: Creneau) => ({ statut: c.statut, mode: c.mode, pathologie: c.pathologie, bim: c.bim, domicile: c.domicile });
 const aDesDonnees = (c: Creneau) => !!c.statut || !!c.commentaire?.trim();
 
 /**
@@ -68,25 +85,60 @@ export function fusionner(jour: Creneau[], i: number, sens: -1 | 1): { fusion: C
     mode: source.mode ?? autre.mode,
     commentaire: notes.length ? notes.join(' / ') : undefined,
   };
-  if (!fusion.statut) delete fusion.mode;
-  for (const k of ['statut', 'mode', 'commentaire'] as const) if (fusion[k] === undefined) delete fusion[k];
+  if (!fusion.statut) for (const k of ['mode', 'pathologie', 'bim', 'domicile'] as const) delete fusion[k];
+  for (const k of CHAMPS) if (fusion[k] === undefined || fusion[k] === false) delete fusion[k];
   return { fusion, supprime: second.id };
 }
 
 /** Sépare un créneau fusionné : il redevient un créneau de 30 min (les suivants reviennent par défaut). */
 export const separer = (c: Creneau): Creneau => ({ ...c, fin: c.debut + PAS });
 
-export interface ResumeMois {
-  paye: { totalite: number; tiers: number };
-  arecevoir: { totalite: number; tiers: number };
+/** Code INAMI du créneau (pathologie + lieu). */
+export const codeCreneau = (c: Pick<Creneau, 'pathologie' | 'domicile'>) =>
+  PATHOLOGIES[c.pathologie ?? 'courant'][c.domicile ? 'domicile' : 'cabinet'];
+
+/**
+ * Montants d'une séance du créneau (une séance, même si le créneau est fusionné).
+ * Tiers payant : le patient paie le ticket modérateur, la mutuelle l'intervention (selon BIM).
+ * Totalité : le patient paie les honoraires.
+ */
+export function montantCreneau(c: Creneau, conventionne = true): Montants | null {
+  if (!c.statut) return null;
+  const t = findTarif(codeCreneau(c));
+  if (!t) return null;
+  const tiersPayant = (c.mode ?? 'tiers') === 'tiers';
+  return calculer(t, { bim: tiersPayant && !!c.bim, conventionne, tiersPayant });
 }
 
-/** Nombre de créneaux payés / à recevoir du mois (AAAA-MM), par mode. */
-export function resumeMois(creneaux: Creneau[], mois: string): ResumeMois {
-  const r: ResumeMois = { paye: { totalite: 0, tiers: 0 }, arecevoir: { totalite: 0, tiers: 0 } };
+export interface Ligne {
+  nombre: number;
+  /** total encaissé du patient */
+  patient: number;
+  /** total versé par la mutuelle */
+  mutuelle: number;
+}
+
+export interface ResumeMois {
+  paye: { totalite: number; tiers: number } & Ligne;
+  arecevoir: { totalite: number; tiers: number } & Ligne;
+}
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Créneaux payés / à recevoir du mois (AAAA-MM) : nombre par mode et montants. */
+export function resumeMois(creneaux: Creneau[], mois: string, conventionne = true): ResumeMois {
+  const vide = () => ({ totalite: 0, tiers: 0, nombre: 0, patient: 0, mutuelle: 0 });
+  const r: ResumeMois = { paye: vide(), arecevoir: vide() };
   for (const c of creneaux) {
     if (!c.statut || !c.date.startsWith(mois)) continue;
-    r[c.statut][c.mode ?? 'tiers']++;
+    const x = r[c.statut];
+    x[c.mode ?? 'tiers']++;
+    x.nombre++;
+    const m = montantCreneau(c, conventionne);
+    if (m) {
+      x.patient = r2(x.patient + m.patient);
+      x.mutuelle = r2(x.mutuelle + m.mutuelle);
+    }
   }
   return r;
 }

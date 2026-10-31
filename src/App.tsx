@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ecrireReglages, lireReglages, REGLAGES_DEFAUT, tous, type Reglages } from './lib/db';
+import { ecrireReglages, lireReglages, REGLAGES_DEFAUT, surBlocage, tous, type Reglages } from './lib/db';
 import type { Patient, Seance } from './lib/calcul';
 import type { Dispatch, Ticket } from './lib/db';
 import type { Mouvement } from './lib/banque';
@@ -57,6 +57,14 @@ export default function App() {
     void recharger();
   }, [recharger]);
 
+  // chargement bloqué (ancienne version ouverte ailleurs) ou trop long : le dire au lieu de « Chargement… » sans fin
+  const [bloque, setBloque] = useState(false);
+  useEffect(() => {
+    surBlocage(() => setBloque(true));
+    const t = setTimeout(() => setBloque(true), 6000);
+    return () => clearTimeout(t);
+  }, []);
+
   const setReglages = (r: Reglages) => {
     setReglagesState(r);
     void ecrireReglages(r);
@@ -80,6 +88,13 @@ export default function App() {
       <main>
         {erreur && <p className="erreur">{erreur}</p>}
         {!pret && !erreur && <p>Chargement…</p>}
+        {!pret && !erreur && bloque && (
+          <p className="erreur">
+            L'app ne se charge pas : une ancienne version est sans doute encore ouverte. Ferme tous les onglets et
+            l'app Kiné Compta (aussi dans les apps récentes du téléphone), puis rouvre-la.{' '}
+            <button onClick={() => location.reload()}>Recharger</button>
+          </p>
+        )}
         {pret && onglet === 'seances' && <Seances d={d} />}
         {pret && onglet === 'calendrier' && <Calendrier d={d} />}
         {pret && onglet === 'banque' && <Banque d={d} />}

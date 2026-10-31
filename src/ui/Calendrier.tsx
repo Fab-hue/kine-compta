@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { enregistrer, supprimer } from '../lib/db';
 import {
-  creneauxDuJour, DERNIER, estVide, fusionner, hhmm, PAS, PREMIER, resumeMois, separer,
-  type Creneau, type Mode, type Statut,
+  codeCreneau, creneauxDuJour, DERNIER, estVide, fusionner, hhmm, montantCreneau, PAS, PATHOLOGIES, PREMIER, resumeMois, separer,
+  type Creneau, type Mode, type Pathologie, type Statut,
 } from '../lib/creneaux';
-import { formatDate, libelleMois, type Donnees } from './common';
+import { eur, formatDate, libelleMois, type Donnees } from './common';
 
-const PX_PAR_CRENEAU = 40; // hauteur d'un créneau de 30 min (zone tactile confortable)
+const PX_PAR_CRENEAU = 48; // hauteur d'un créneau de 30 min : 2 lignes lisibles + zone tactile confortable
 const JOURS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 
 const iso = (dt: Date) =>
@@ -25,6 +25,15 @@ const plage = (c: Creneau) => `${hhmm(c.debut)} – ${hhmm(c.fin)}`;
 const MODE_COURT: Record<Mode, string> = { totalite: 'Totalité', tiers: 'Tiers payant' };
 const STATUT_MOT: Record<Statut, string> = { paye: 'Payé', arecevoir: 'À recevoir' };
 
+/** Détails courts d'un créneau : « TP · BIM · FA · Dom. ». */
+const details = (c: Creneau, avecMode = true) =>
+  [
+    avecMode ? (c.mode === 'totalite' ? 'Tot.' : 'TP') : '',
+    c.mode !== 'totalite' && c.bim ? 'BIM' : '',
+    c.pathologie && c.pathologie !== 'courant' ? PATHOLOGIES[c.pathologie].court : '',
+    c.domicile ? 'Dom.' : '',
+  ].filter(Boolean).join(' · ');
+
 /** Enregistre le créneau, ou l'efface s'il est redevenu un créneau vide de 30 min. */
 async function sauverCreneau(c: Creneau) {
   if (estVide(c)) await supprimer('creneaux', c.id);
@@ -38,14 +47,12 @@ function BlocCreneau({ c, style, onOuvrir }: { c: Creneau; style: React.CSSPrope
       className={`cr-bloc ${c.statut ?? ''}`}
       style={style}
       onClick={onOuvrir}
-      aria-label={`${formatDate(c.date)} ${plage(c)}${c.statut ? ` : ${STATUT_MOT[c.statut]}, ${MODE_COURT[c.mode ?? 'tiers']}` : ' : libre'}${c.commentaire ? `, ${c.commentaire}` : ''}`}
+      aria-label={`${formatDate(c.date)} ${plage(c)}${c.statut ? ` : ${STATUT_MOT[c.statut]}, ${details(c)}` : ' : libre'}${c.commentaire ? `, ${c.commentaire}` : ''}`}
     >
-      <span className="cr-heure">{fusionne ? plage(c) : hhmm(c.debut)}</span>
-      {c.statut && (
-        <span className="cr-etat">
-          {c.statut === 'paye' ? '✓' : '!'} {STATUT_MOT[c.statut]} · {c.mode === 'totalite' ? 'Tot.' : 'TP'}
-        </span>
-      )}
+      <span className="cr-ligne">
+        <span className="cr-heure">{fusionne ? plage(c) : hhmm(c.debut)}</span>
+        {c.statut && <span className="cr-etat">{c.statut === 'paye' ? '✓' : '!'} {details(c)}</span>}
+      </span>
       {c.commentaire && <span className="cr-note">{c.commentaire}</span>}
     </button>
   );
@@ -61,7 +68,11 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
   const ref = useRef<HTMLDialogElement>(null);
   const [statut, setStatut] = useState<Statut | ''>(c.statut ?? '');
   const [mode, setMode] = useState<Mode>(c.mode ?? 'tiers');
+  const [pathologie, setPathologie] = useState<Pathologie>(c.pathologie ?? 'courant');
+  const [bim, setBim] = useState(!!c.bim);
+  const [domicile, setDomicile] = useState(!!c.domicile);
   const [commentaire, setCommentaire] = useState(c.commentaire ?? '');
+  const [confirmer, setConfirmer] = useState(false);
   const i = jour.findIndex((x) => x.id === c.id);
 
   useEffect(() => {
@@ -71,7 +82,12 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
   /** Créneau avec les valeurs du formulaire. */
   const courant = (): Creneau => {
     const x: Creneau = { id: c.id, date: c.date, debut: c.debut, fin: c.fin };
-    if (statut) Object.assign(x, { statut, mode });
+    if (statut) {
+      Object.assign(x, { statut, mode });
+      if (pathologie !== 'courant') x.pathologie = pathologie;
+      if (mode === 'tiers' && bim) x.bim = true;
+      if (domicile) x.domicile = true;
+    }
     if (commentaire.trim()) x.commentaire = commentaire.trim();
     return x;
   };
@@ -92,6 +108,15 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
     await d.recharger();
     onOuvrir(r.fusion.id);
   };
+
+  /** Efface tout : le créneau (même fusionné) redevient des créneaux libres de 30 min. */
+  const effacer = async () => {
+    await supprimer('creneaux', c.id);
+    await d.recharger();
+    onFermer();
+  };
+
+  const montant = montantCreneau(courant(), d.reglages.conventionne);
 
   const separation = async () => {
     await sauverCreneau(separer(courant()));
@@ -118,12 +143,41 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
           <label className="cr-choix arecevoir"><input type="radio" name="statut" checked={statut === 'arecevoir'} onChange={() => setStatut('arecevoir')} /> À recevoir</label>
         </div>
         {statut && (
-          <div className="cases">
-            <label><input type="radio" name="mode" checked={mode === 'tiers'} onChange={() => setMode('tiers')} /> Tiers payant</label>
-            <label><input type="radio" name="mode" checked={mode === 'totalite'} onChange={() => setMode('totalite')} /> Totalité</label>
-          </div>
+          <>
+            <div className="cases">
+              <label><input type="radio" name="mode" checked={mode === 'tiers'} onChange={() => setMode('tiers')} /> Tiers payant</label>
+              <label><input type="radio" name="mode" checked={mode === 'totalite'} onChange={() => setMode('totalite')} /> Totalité</label>
+            </div>
+            <div className="cases">
+              {mode === 'tiers' && (
+                <label><input type="checkbox" checked={bim} onChange={(e) => setBim(e.target.checked)} /> Patient BIM / VIPO</label>
+              )}
+              <label><input type="checkbox" checked={domicile} onChange={(e) => setDomicile(e.target.checked)} /> À domicile</label>
+            </div>
+          </>
         )}
       </fieldset>
+
+      {statut && (
+        <fieldset>
+          <legend>Pathologie</legend>
+          <div className="cases">
+            {(Object.keys(PATHOLOGIES) as Pathologie[]).map((p) => (
+              <label key={p}>
+                <input type="radio" name="pathologie" checked={pathologie === p} onChange={() => setPathologie(p)} /> {PATHOLOGIES[p].libelle}
+              </label>
+            ))}
+          </div>
+          {montant && (
+            <p className="cr-montant">
+              Code {codeCreneau({ pathologie, domicile })} · honoraires {eur(montant.honoraires)}
+              <br />
+              <strong>Patient : {eur(montant.patient)}</strong>
+              {mode === 'tiers' && <> · <strong>Mutuelle : {eur(montant.mutuelle)}</strong></>}
+            </p>
+          )}
+        </fieldset>
+      )}
 
       <label className="champ">
         <span>Commentaire</span>
@@ -135,9 +189,27 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
         <button className="primaire" onClick={() => void sauver()}>Enregistrer</button>{' '}
         <button onClick={onFermer}>Annuler</button>
       </p>
+      {!estVide(c) && (
+        <p className="cr-effacer">
+          {confirmer ? (
+            <>
+              Tout effacer pour {plage(c)} ?{' '}
+              <button className="danger" onClick={() => void effacer()}>Oui, effacer</button>{' '}
+              <button onClick={() => setConfirmer(false)}>Non</button>
+            </>
+          ) : (
+            <button className="danger" onClick={() => setConfirmer(true)}>Effacer ce créneau</button>
+          )}
+        </p>
+      )}
     </dialog>
   );
 }
+
+const montantTexte = (c: Creneau, d: Donnees) => {
+  const m = montantCreneau(c, d.reglages.conventionne);
+  return m ? eur(m.patient + m.mutuelle) : '';
+};
 
 export default function Calendrier({ d }: { d: Donnees }) {
   const [vue, setVue] = useState<'semaine' | 'jour'>(() => (window.matchMedia('(max-width: 699px)').matches ? 'jour' : 'semaine'));
@@ -155,7 +227,7 @@ export default function Calendrier({ d }: { d: Donnees }) {
   const pxMin = PX_PAR_CRENEAU / PAS;
 
   const mois = pivot.slice(0, 7);
-  const resume = resumeMois(d.creneaux, mois);
+  const resume = resumeMois(d.creneaux, mois, d.reglages.conventionne);
   const aRecevoir = useMemo(
     () => d.creneaux.filter((c) => c.statut === 'arecevoir').sort((a, b) => a.date.localeCompare(b.date) || a.debut - b.debut),
     [d.creneaux],
@@ -210,7 +282,7 @@ export default function Calendrier({ d }: { d: Donnees }) {
         <div className="cal-legende">
           <span><i className="cal-puce recu" /> vert = payé</span>
           <span><i className="cal-puce attente" /> rouge = à recevoir</span>
-          <span>TP = tiers payant · Tot. = totalité</span>
+          <span>✓ payé · ! à recevoir · TP = tiers payant · Tot. = totalité · Dom. = à domicile</span>
         </div>
         <p className="aide">Clique sur un créneau pour noter le paiement ou le fusionner avec le précédent / le suivant.</p>
       </section>
@@ -218,8 +290,18 @@ export default function Calendrier({ d }: { d: Donnees }) {
       <section className="carte">
         <h2>Résumé de {libelleMois(mois)}</h2>
         <div className="totaux">
-          <div><span>Payé</span><strong>{resume.paye.tiers + resume.paye.totalite}</strong><span>{resume.paye.tiers} tiers payant · {resume.paye.totalite} totalité</span></div>
-          <div><span>À recevoir</span><strong>{resume.arecevoir.tiers + resume.arecevoir.totalite}</strong><span>{resume.arecevoir.tiers} tiers payant · {resume.arecevoir.totalite} totalité</span></div>
+          <div>
+            <span>Payé · {resume.paye.nombre} séance{resume.paye.nombre > 1 ? 's' : ''}</span>
+            <strong>{eur(resume.paye.patient + resume.paye.mutuelle)}</strong>
+            <span>patients {eur(resume.paye.patient)} · mutuelles {eur(resume.paye.mutuelle)}</span>
+            <span>{resume.paye.tiers} tiers payant · {resume.paye.totalite} totalité</span>
+          </div>
+          <div>
+            <span>À recevoir · {resume.arecevoir.nombre} séance{resume.arecevoir.nombre > 1 ? 's' : ''}</span>
+            <strong>{eur(resume.arecevoir.patient + resume.arecevoir.mutuelle)}</strong>
+            <span>patients {eur(resume.arecevoir.patient)} · mutuelles {eur(resume.arecevoir.mutuelle)}</span>
+            <span>{resume.arecevoir.tiers} tiers payant · {resume.arecevoir.totalite} totalité</span>
+          </div>
         </div>
         <h3>Tout ce qui reste à recevoir</h3>
         {aRecevoir.length === 0 ? (
@@ -231,7 +313,7 @@ export default function Calendrier({ d }: { d: Donnees }) {
                 <button className="lien" onClick={() => setOuvert(c.id)}>
                   {jourLong(c.date)} · {plage(c)}
                 </button>{' '}
-                · {MODE_COURT[c.mode ?? 'tiers']}{c.commentaire ? ` · ${c.commentaire}` : ''}
+                · {[MODE_COURT[c.mode ?? 'tiers'], details(c, false), montantTexte(c, d), c.commentaire].filter(Boolean).join(' · ')}
               </li>
             ))}
           </ul>

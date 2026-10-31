@@ -218,7 +218,7 @@ describe('suivi des paiements', () => {
   });
 });
 
-import { creneauxDuJour, fusionner, resumeMois, separer, type Creneau } from '../src/lib/creneaux';
+import { codeCreneau, creneauxDuJour, fusionner, montantCreneau, resumeMois, separer, type Creneau } from '../src/lib/creneaux';
 
 describe('créneaux', () => {
   const j = '2026-12-14';
@@ -250,8 +250,27 @@ describe('créneaux', () => {
     expect(separer(long).fin).toBe(630);
     expect(creneauxDuJour(j, [long])).toHaveLength(17);
     expect(resumeMois([long, { ...long, id: 'y', statut: 'paye', mode: 'tiers' }], '2026-12')).toEqual({
-      paye: { totalite: 0, tiers: 1 },
-      arecevoir: { totalite: 1, tiers: 0 },
+      paye: { totalite: 0, tiers: 1, nombre: 1, patient: 6.25, mutuelle: 25.39 },
+      arecevoir: { totalite: 1, tiers: 0, nombre: 1, patient: 31.64, mutuelle: 0 },
     });
+  });
+});
+
+describe('montants des créneaux', () => {
+  const base: Creneau = { id: 'z', date: '2026-12-14', debut: 480, fin: 510, statut: 'paye', mode: 'tiers' };
+  it('codes et montants par pathologie, BIM, domicile', () => {
+    expect(codeCreneau({})).toBe('560011');
+    expect(codeCreneau({ pathologie: 'fa', domicile: true })).toBe('563312');
+    expect(montantCreneau({ ...base, bim: true })).toMatchObject({ patient: 2.5, mutuelle: 29.14 });
+    expect(montantCreneau(base)).toMatchObject({ patient: 6.25, mutuelle: 25.39 });
+    expect(montantCreneau({ ...base, bim: true, pathologie: 'fa', domicile: true })).toMatchObject({ patient: 2, mutuelle: 32.81 });
+    expect(montantCreneau({ ...base, mode: 'totalite', pathologie: 'e', bim: true })).toMatchObject({ patient: 31.64, mutuelle: 0 });
+    expect(montantCreneau({ ...base, statut: undefined })).toBeNull();
+  });
+  it('la fusion garde pathologie et domicile', () => {
+    const j = '2026-12-14';
+    const jour = creneauxDuJour(j, [{ ...base, pathologie: 'fb', domicile: true, commentaire: 'A.B.' }]);
+    const r = fusionner(jour, 0, 1)!;
+    expect(r.fusion).toMatchObject({ pathologie: 'fb', domicile: true, statut: 'paye' });
   });
 });
