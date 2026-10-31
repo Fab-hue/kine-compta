@@ -3,6 +3,7 @@ import { openDB, type DBSchema } from 'idb';
 import type { Patient, Seance } from './calcul';
 import type { Depense } from './excel';
 import type { Mouvement } from './banque';
+import type { Creneau } from './creneaux';
 
 export interface Ticket extends Depense {
   photo?: Blob;
@@ -53,14 +54,15 @@ interface Schema extends DBSchema {
   reglages: { key: string; value: Reglages };
   dispatchs: { key: string; value: Dispatch };
   mouvements: { key: string; value: Mouvement };
+  creneaux: { key: string; value: Creneau };
 }
 
-type Store = 'patients' | 'seances' | 'tickets' | 'dispatchs' | 'mouvements';
+type Store = 'patients' | 'seances' | 'tickets' | 'dispatchs' | 'mouvements' | 'creneaux';
 
 export const idDispatch = (numero: string, mutuelle?: string) =>
   `${numero}|${(mutuelle ?? '').trim().toLowerCase()}`;
 
-const db = openDB<Schema>('kine-compta', 3, {
+const db = openDB<Schema>('kine-compta', 4, {
   upgrade(d, ancienne) {
     if (ancienne < 1) {
       d.createObjectStore('patients', { keyPath: 'id' });
@@ -72,6 +74,8 @@ const db = openDB<Schema>('kine-compta', 3, {
     // v3 : dispatchs indexés par id (numéro + mutuelle) au lieu du seul numéro
     if (ancienne === 2) d.deleteObjectStore('dispatchs');
     if (ancienne < 3) d.createObjectStore('dispatchs', { keyPath: 'id' });
+    // v4 : agenda en créneaux de 30 min (sans nom de patient)
+    if (ancienne < 4) d.createObjectStore('creneaux', { keyPath: 'id' });
   },
 });
 
@@ -102,6 +106,7 @@ export async function exporterSauvegarde() {
     tickets,
     dispatchs: await tous('dispatchs'),
     mouvements: await tous('mouvements'),
+    creneaux: await tous('creneaux'),
     reglages: await lireReglages(),
   });
 }
@@ -113,5 +118,6 @@ export async function importerSauvegarde(json: string) {
   for (const t of d.tickets ?? []) await enregistrer('tickets', t);
   for (const x of d.dispatchs ?? []) await enregistrer('dispatchs', { ...x, id: x.id ?? idDispatch(x.numero, x.mutuelle) });
   await enregistrerMouvements(d.mouvements ?? []);
+  for (const c of d.creneaux ?? []) await enregistrer('creneaux', c);
   if (d.reglages) await ecrireReglages(d.reglages);
 }

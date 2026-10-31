@@ -33,9 +33,9 @@ export default function ReglagesTab({ d }: { d: Donnees }) {
   };
 
   const toutEffacer = async () => {
-    if (!confirm('Effacer TOUTES les données (patients, séances, tickets, réglages) de cet appareil ? Cette action est définitive.')) return;
+    if (!confirm('Effacer TOUTES les données (patients, séances, agenda, tickets, banque, réglages) de cet appareil ? Cette action est définitive.')) return;
     if (!confirm('Dernière confirmation : tout effacer ?')) return;
-    for (const s of ['patients', 'seances', 'tickets'] as const) {
+    for (const s of ['patients', 'seances', 'tickets', 'dispatchs', 'mouvements', 'creneaux'] as const) {
       for (const x of await tous(s)) await supprimer(s, x.id);
     }
     await ecrireReglages(REGLAGES_DEFAUT);

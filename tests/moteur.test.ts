@@ -217,3 +217,41 @@ describe('suivi des paiements', () => {
     expect(partMutuelle(c, 'totalite')).toBe(0);
   });
 });
+
+import { creneauxDuJour, fusionner, resumeMois, separer, type Creneau } from '../src/lib/creneaux';
+
+describe('créneaux', () => {
+  const j = '2026-12-14';
+  it('19 créneaux de 8h00 à 17h00 par défaut', () => {
+    const c = creneauxDuJour(j, []);
+    expect(c).toHaveLength(19);
+    expect(c[0].id).toBe('2026-12-14|08:00');
+    expect(c.at(-1)!.id).toBe('2026-12-14|17:00');
+    expect(c.some((x) => x.id.endsWith('13:00'))).toBe(true);
+  });
+  it('fusion avec le suivant puis le précédent, statut gardé, notes jointes', () => {
+    const jour = creneauxDuJour(j, []);
+    jour[2] = { ...jour[2], statut: 'paye', mode: 'tiers', commentaire: 'J.D.' };
+    const r = fusionner(jour, 2, 1)!;
+    expect(r.fusion).toMatchObject({ id: '2026-12-14|09:00', debut: 540, fin: 600, statut: 'paye', mode: 'tiers' });
+    expect(r.supprime).toBe('2026-12-14|09:30');
+    const apres = creneauxDuJour(j, [r.fusion]);
+    expect(apres).toHaveLength(18);
+    const i = apres.findIndex((x) => x.id === r.fusion.id);
+    const r2 = fusionner(apres, i, -1)!;
+    expect(r2.fusion).toMatchObject({ id: '2026-12-14|08:30', debut: 510, fin: 600, statut: 'paye', commentaire: 'J.D.' });
+    expect(r2.supprime).toBe('2026-12-14|09:00');
+  });
+  it('pas de fusion au bord, séparation, résumé du mois', () => {
+    const jour = creneauxDuJour(j, []);
+    expect(fusionner(jour, 0, -1)).toBeNull();
+    expect(fusionner(jour, 18, 1)).toBeNull();
+    const long: Creneau = { id: 'x', date: j, debut: 600, fin: 690, statut: 'arecevoir', mode: 'totalite' };
+    expect(separer(long).fin).toBe(630);
+    expect(creneauxDuJour(j, [long])).toHaveLength(17);
+    expect(resumeMois([long, { ...long, id: 'y', statut: 'paye', mode: 'tiers' }], '2026-12')).toEqual({
+      paye: { totalite: 0, tiers: 1 },
+      arecevoir: { totalite: 1, tiers: 0 },
+    });
+  });
+});

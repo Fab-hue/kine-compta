@@ -3,6 +3,7 @@ import { ecrireReglages, lireReglages, REGLAGES_DEFAUT, tous, type Reglages } fr
 import type { Patient, Seance } from './lib/calcul';
 import type { Dispatch, Ticket } from './lib/db';
 import type { Mouvement } from './lib/banque';
+import type { Creneau } from './lib/creneaux';
 import type { Donnees } from './ui/common';
 import Seances from './ui/Seances';
 import Calendrier from './ui/Calendrier';
@@ -13,8 +14,8 @@ import Export from './ui/Export';
 import ReglagesTab from './ui/Reglages';
 
 const ONGLETS = [
-  { id: 'seances', label: 'Séances' },
   { id: 'calendrier', label: 'Calendrier' },
+  { id: 'seances', label: 'Séances' },
   { id: 'banque', label: 'Banque' },
   { id: 'patients', label: 'Patients' },
   { id: 'tickets', label: 'Tickets' },
@@ -23,26 +24,28 @@ const ONGLETS = [
 ];
 
 export default function App() {
-  const [onglet, setOnglet] = useState('seances');
+  const [onglet, setOnglet] = useState('calendrier');
   const [patients, setPatients] = useState<Patient[]>([]);
   const [seances, setSeances] = useState<Seance[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [dispatchs, setDispatchs] = useState<Dispatch[]>([]);
   const [mouvements, setMouvements] = useState<Mouvement[]>([]);
+  const [creneaux, setCreneaux] = useState<Creneau[]>([]);
   const [reglages, setReglagesState] = useState<Reglages>(REGLAGES_DEFAUT);
   const [pret, setPret] = useState(false);
   const [erreur, setErreur] = useState('');
 
   const recharger = useCallback(async () => {
     try {
-      const [p, s, t, di, mv, r] = await Promise.all([
-        tous('patients'), tous('seances'), tous('tickets'), tous('dispatchs'), tous('mouvements'), lireReglages(),
+      const [p, s, t, di, mv, cr, r] = await Promise.all([
+        tous('patients'), tous('seances'), tous('tickets'), tous('dispatchs'), tous('mouvements'), tous('creneaux'), lireReglages(),
       ]);
       setPatients(p);
       setSeances(s);
       setTickets(t);
       setDispatchs(di);
       setMouvements(mv);
+      setCreneaux(cr);
       setReglagesState(r);
       setPret(true);
     } catch (e) {
@@ -59,7 +62,7 @@ export default function App() {
     void ecrireReglages(r);
   };
 
-  const d: Donnees = { patients, seances, tickets, dispatchs, mouvements, reglages, recharger, setReglages, aller: setOnglet };
+  const d: Donnees = { patients, seances, tickets, dispatchs, mouvements, creneaux, reglages, recharger, setReglages, aller: setOnglet };
 
   return (
     <div className="app">

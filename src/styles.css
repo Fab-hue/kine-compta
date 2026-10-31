@@ -117,3 +117,22 @@ dialog.fiche::backdrop { background: rgba(0, 0, 0, 0.4); }
   body { font-size: 15px; }
   .onglets button { flex: 1 1 45%; }
 }
+
+/* Agenda en créneaux de 30 min */
+.cr-jour-col { background-image: none; }
+.cr-bloc { position: absolute; left: 3px; right: 3px; display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 2px 8px; overflow: hidden; border: 1px solid var(--bord); border-radius: 6px; background: #fff; text-align: left; font-size: 0.8rem; line-height: 1.15; }
+.cr-bloc:hover { border-color: var(--accent); }
+.cr-bloc.paye { background: #d7f0de; border: 2px solid #1b6e3a; color: #0f4a26; }
+.cr-bloc.arecevoir { background: #fbdcd9; border: 2px solid #b3261e; color: #7a1610; }
+.cr-heure { font-variant-numeric: tabular-nums; }
+.cr-etat { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-note { font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-jour { margin-top: -6px; text-transform: capitalize; color: var(--doux); }
+.cr-fusion { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.cr-fusion button:disabled { opacity: 0.45; cursor: default; }
+.cr-choix.paye { color: var(--ok); font-weight: 600; }
+.cr-choix.arecevoir { color: var(--danger); font-weight: 600; }
+@media (max-width: 480px) {
+  .cal-nav { gap: 4px; flex-wrap: nowrap; }
+  .cal-nav button { padding: 6px 9px; }
+}
