@@ -296,3 +296,35 @@ describe('montants des créneaux', () => {
     expect(r.fusion).toMatchObject({ pathologie: 'fb', domicile: true, statut: 'paye' });
   });
 });
+
+import { montantCreneau as mc, totauxCreneauxParMois } from '../src/lib/creneaux';
+import { delaiProchainRappel, icsRappel, rappelDu } from '../src/lib/rappel';
+
+describe('agenda → export et rappel 18h', () => {
+  const cr = (date: string, ch: Partial<Creneau>): Creneau => ({ id: `${date}|09:00`, date, debut: 540, fin: 570, ...ch });
+  it('totaux de l\'agenda par mois (payé + à recevoir, libres ignorés)', () => {
+    const a = cr('2026-03-02', { statut: 'paye', mode: 'tiers' });
+    const b = cr('2026-03-03', { statut: 'arecevoir', mode: 'totalite' });
+    const c = cr('2026-03-04', { commentaire: 'AB' });
+    const t = totauxCreneauxParMois([a, b, c, cr('2025-03-02', { statut: 'paye' })], 2026);
+    const ma = mc(a, true)!, mb = mc(b, true)!;
+    expect(t[2].nbSeances).toBe(2);
+    expect(t[2].carnet).toBeCloseTo(ma.patient + mb.patient, 2);
+    expect(t[2].virements).toBeCloseTo(ma.mutuelle + mb.mutuelle, 2);
+    expect(t[2].virements).toBeGreaterThan(0);
+    expect(t[1].nbSeances).toBe(0);
+  });
+  it('rappel : jour ouvré après 18h et journée vide seulement', () => {
+    const lun18 = new Date(2026, 10, 2, 18, 5);
+    expect(rappelDu(lun18, [])).toBe(true);
+    expect(rappelDu(new Date(2026, 10, 2, 17, 59), [])).toBe(false);
+    expect(rappelDu(new Date(2026, 10, 1, 19, 0), [])).toBe(false); // dimanche
+    expect(rappelDu(lun18, [cr('2026-11-02', { statut: 'paye' })])).toBe(false);
+    expect(delaiProchainRappel(new Date(2026, 10, 2, 17, 0))).toBe(3600_000);
+    expect(delaiProchainRappel(new Date(2026, 10, 2, 18, 0))).toBe(24 * 3600_000);
+    const ics = icsRappel('https://exemple.test/', new Date(2026, 10, 2));
+    expect(ics).toContain('DTSTART:20261102T180000');
+    expect(ics).toContain('RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR');
+    expect(ics).toContain('BEGIN:VALARM');
+  });
+});

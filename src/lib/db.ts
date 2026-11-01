@@ -36,6 +36,8 @@ export interface Reglages {
   retrocession: number[];
   primeInami: { mois: number; montant: number };
   identite: { nomPrenom?: string; adresse?: string; cpCommune?: string; bce?: string };
+  /** rappel quotidien à 18h (bandeau + notification si autorisée) */
+  rappel?: boolean;
 }
 
 export const REGLAGES_DEFAUT: Reglages = {
@@ -45,6 +47,7 @@ export const REGLAGES_DEFAUT: Reglages = {
   retrocession: Array(12).fill(0),
   primeInami: { mois: 0, montant: 0 },
   identite: {},
+  rappel: true,
 };
 
 interface Schema extends DBSchema {

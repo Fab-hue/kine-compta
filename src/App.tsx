@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ecrireReglages, lireReglages, REGLAGES_DEFAUT, surBlocage, tous, type Reglages } from './lib/db';
 import type { Patient, Seance } from './lib/calcul';
 import type { Dispatch, Ticket } from './lib/db';
 import type { Mouvement } from './lib/banque';
 import type { Creneau } from './lib/creneaux';
+import { delaiProchainRappel, notifier, rappelDu } from './lib/rappel';
 import type { Donnees } from './ui/common';
 import Seances from './ui/Seances';
 import Calendrier from './ui/Calendrier';
@@ -70,6 +71,28 @@ export default function App() {
     void ecrireReglages(r);
   };
 
+  // rappel de 18h : réévalué à 18h pile et quand l'app revient au premier plan
+  const [maintenant, setMaintenant] = useState(() => new Date());
+  const creneauxRef = useRef(creneaux);
+  creneauxRef.current = creneaux;
+  useEffect(() => {
+    if (!reglages.rappel) return;
+    let t: ReturnType<typeof setTimeout>;
+    const planifier = () => {
+      t = setTimeout(() => {
+        const n = new Date();
+        setMaintenant(n);
+        if (rappelDu(n, creneauxRef.current)) void notifier();
+        planifier();
+      }, delaiProchainRappel(new Date()) + 1000);
+    };
+    planifier();
+    const vu = () => { if (document.visibilityState === 'visible') setMaintenant(new Date()); };
+    document.addEventListener('visibilitychange', vu);
+    return () => { clearTimeout(t); document.removeEventListener('visibilitychange', vu); };
+  }, [reglages.rappel]);
+  const rappel = pret && !!reglages.rappel && rappelDu(maintenant, creneaux);
+
   const d: Donnees = { patients, seances, tickets, dispatchs, mouvements, creneaux, reglages, recharger, setReglages, aller: setOnglet };
 
   return (
@@ -86,6 +109,15 @@ export default function App() {
         </nav>
       </header>
       <main>
+        {rappel && onglet !== 'calendrier' && (
+          <p className="avertissement rappel">
+            Il est plus de 18h et rien n'est noté aujourd'hui dans l'agenda.{' '}
+            <button className="lien" onClick={() => setOnglet('calendrier')}>Remplir l'agenda</button>
+          </p>
+        )}
+        {rappel && onglet === 'calendrier' && (
+          <p className="avertissement rappel">Il est plus de 18h : note les séances du jour.</p>
+        )}
         {erreur && <p className="erreur">{erreur}</p>}
         {!pret && !erreur && <p>Chargement…</p>}
         {!pret && !erreur && bloque && (

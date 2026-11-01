@@ -215,3 +215,24 @@ export function resumeMois(creneaux: Creneau[], mois: string, conventionne = tru
   }
   return r;
 }
+
+/**
+ * Totaux de l'agenda par mois de la séance (année donnée), pour l'export Excel :
+ * Carnet = part patient, Virements = part mutuelle. Payés et à recevoir comptent (mois de la séance).
+ */
+export function totauxCreneauxParMois(creneaux: Creneau[], annee: number, conventionne = true) {
+  const res = Array.from({ length: 12 }, (_, mois) => ({ mois, carnet: 0, virements: 0, nbSeances: 0 }));
+  for (const c of creneaux) {
+    if (!c.statut || !c.date.startsWith(`${annee}-`)) continue;
+    const m = montantCreneau(c, conventionne);
+    if (!m) continue;
+    const x = res[Number(c.date.slice(5, 7)) - 1];
+    x.carnet = r2(x.carnet + m.patient);
+    x.virements = r2(x.virements + m.mutuelle);
+    x.nbSeances++;
+  }
+  return res;
+}
+
+/** Jour ouvré (lun-ven) sans aucun créneau rempli ? */
+export const jourVide = (date: string, creneaux: Creneau[]) => !creneaux.some((c) => c.date === date && !estVide(c));

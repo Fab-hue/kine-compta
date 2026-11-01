@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { calculerSeances, totauxParMois, type Patient } from '../lib/calcul';
+import { totauxCreneauxParMois } from '../lib/creneaux';
 import { depensesFixes, remplirExcel } from '../lib/excel';
 import { eur, MOIS, type Donnees } from './common';
 
@@ -12,8 +13,16 @@ export default function Export({ d }: { d: Donnees }) {
   const mois = useMemo(() => {
     const patients = new Map<string, Patient>();
     for (const p of d.patients) if (p.code) patients.set(p.id, p);
-    return totauxParMois(calculerSeances(d.seances, patients, r.conventionne), annee);
-  }, [d.patients, d.seances, r.conventionne, annee]);
+    // agenda (créneaux payés ou à recevoir) + séances importées, au mois de la séance
+    const ag = totauxCreneauxParMois(d.creneaux, annee, r.conventionne);
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    return totauxParMois(calculerSeances(d.seances, patients, r.conventionne), annee).map((m, i) => ({
+      mois: m.mois,
+      carnet: r2(m.carnet + ag[i].carnet),
+      virements: r2(m.virements + ag[i].virements),
+      nbSeances: m.nbSeances + ag[i].nbSeances,
+    }));
+  }, [d.patients, d.seances, d.creneaux, r.conventionne, annee]);
 
   const tickets = d.tickets.filter((t) => t.date.startsWith(String(annee)));
   const depMois = (m: number) =>
@@ -68,6 +77,7 @@ export default function Export({ d }: { d: Donnees }) {
           <button className="lien" onClick={() => d.aller('patients')}>Configurer</button>
         </p>
       )}
+      <p className="aide">Carnet = part patient, Virements = part mutuelle. Comptés : créneaux de l'agenda payés ou à recevoir + séances importées, au mois de la séance.</p>
       <div className="defile">
         <table>
           <thead><tr><th>Mois</th><th>Carnet</th><th>Virements</th><th>Séances</th><th>Dépenses (tickets)</th></tr></thead>

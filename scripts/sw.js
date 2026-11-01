@@ -34,3 +34,14 @@ self.addEventListener('fetch', (e) => {
     }),
   );
 });
+
+// clic sur le rappel de 18h : ramener l'app au premier plan (ou l'ouvrir)
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
+      const c = cs.find((x) => x.url.startsWith(self.registration.scope));
+      return c ? c.focus() : self.clients.openWindow(self.registration.scope);
+    }),
+  );
+});
