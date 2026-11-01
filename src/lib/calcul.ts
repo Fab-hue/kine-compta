@@ -124,8 +124,11 @@ export function totauxParMois(calc: SeanceCalculee[], annee: number): TotalMois[
   for (const c of calc) {
     if (c.erreur || !c.seance.date.startsWith(String(annee))) continue;
     const m = res[Number(c.seance.date.slice(5, 7)) - 1];
-    m.carnet = r2(m.carnet + c.patient);
-    m.virements = r2(m.virements + c.mutuelle);
+    // Carnet = séances payées en totalité, Virements = séances en tiers payant (part patient + mutuelle)
+    const mode = c.seance.paiement?.mode ?? (c.mutuelle > 0 ? 'tm' : 'totalite');
+    const total = c.patient + c.mutuelle;
+    if (mode === 'totalite') m.carnet = r2(m.carnet + total);
+    else m.virements = r2(m.virements + total);
     m.nbSeances++;
   }
   return res;

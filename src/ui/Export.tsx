@@ -77,7 +77,7 @@ export default function Export({ d }: { d: Donnees }) {
           <button className="lien" onClick={() => d.aller('patients')}>Configurer</button>
         </p>
       )}
-      <p className="aide">Carnet = part patient, Virements = part mutuelle. Comptés : créneaux de l'agenda payés ou à recevoir + séances importées, au mois de la séance.</p>
+      <p className="aide">Carnet = total perçu pour les séances payées en totalité. Virements = total perçu pour les séances en tiers payant (part patient + part mutuelle). Comptés : créneaux de l'agenda payés ou à recevoir + séances importées, au mois de la séance.</p>
       <div className="defile">
         <table>
           <thead><tr><th>Mois</th><th>Carnet</th><th>Virements</th><th>Séances</th><th>Dépenses (tickets)</th></tr></thead>

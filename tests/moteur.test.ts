@@ -309,8 +309,8 @@ describe('agenda → export et rappel 18h', () => {
     const t = totauxCreneauxParMois([a, b, c, cr('2025-03-02', { statut: 'paye' })], 2026);
     const ma = mc(a, true)!, mb = mc(b, true)!;
     expect(t[2].nbSeances).toBe(2);
-    expect(t[2].carnet).toBeCloseTo(ma.patient + mb.patient, 2);
-    expect(t[2].virements).toBeCloseTo(ma.mutuelle + mb.mutuelle, 2);
+    expect(t[2].carnet).toBeCloseTo(mb.patient + mb.mutuelle, 2);
+    expect(t[2].virements).toBeCloseTo(ma.patient + ma.mutuelle, 2);
     expect(t[2].virements).toBeGreaterThan(0);
     expect(t[1].nbSeances).toBe(0);
   });

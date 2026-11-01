@@ -227,8 +227,10 @@ export function totauxCreneauxParMois(creneaux: Creneau[], annee: number, conven
     const m = montantCreneau(c, conventionne);
     if (!m) continue;
     const x = res[Number(c.date.slice(5, 7)) - 1];
-    x.carnet = r2(x.carnet + m.patient);
-    x.virements = r2(x.virements + m.mutuelle);
+    // tout ce qui est perçu pour la séance va dans la colonne de son mode de paiement
+    const total = m.patient + m.mutuelle;
+    if (c.mode === 'totalite') x.carnet = r2(x.carnet + total);
+    else x.virements = r2(x.virements + total);
     x.nbSeances++;
   }
   return res;
