@@ -2,7 +2,7 @@
 // Lecture OCR sur l'appareil, aperçu modifiable avant d'ajouter quoi que ce soit.
 import { useState } from 'react';
 import { lireAgendaRosa, versGrille, type RdvLu } from '../lib/agendaRosa';
-import { creneauxDuJour, DERNIER, estVide, hhmm, idCreneau, PAS, PREMIER, type Creneau } from '../lib/creneaux';
+import { creneauxSous, DERNIER, estVide, hhmm, idCreneau, PAS, PREMIER, type Creneau } from '../lib/creneaux';
 import { enregistrer, supprimer } from '../lib/db';
 import { lireAgenda } from '../lib/ocr';
 import { formatDate, type Donnees } from './common';
@@ -21,7 +21,8 @@ const depuisHeure = (s: string) => {
 function occupes(l: Ligne, date: string, creneaux: Creneau[]): Creneau[] {
   if (!(l.fin > l.debut)) return [];
   const g = versGrille(l);
-  return creneauxDuJour(date, creneaux).filter((c) => !estVide(c) && c.debut < g.fin && g.debut < c.fin);
+  // aussi les créneaux restés cachés sous un bloc fusionné : écraser les supprime
+  return creneauxSous(creneaux, date, g.debut, g.fin).filter((c) => !estVide(c));
 }
 
 const texteOccupe = (o: Creneau[]) =>

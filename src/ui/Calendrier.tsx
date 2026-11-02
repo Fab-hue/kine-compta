@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { enregistrer, supprimer } from '../lib/db';
 import {
-  creneauxDuJour, DERNIER, estVide, fusionner, hhmm, lignesCreneau, memesParams, montantCreneau, paramsDepuis, PAS, PATHOLOGIES, PREMIER,
+  creneauxDuJour, creneauxSous, DERNIER, estVide, fusionner, hhmm, lignesCreneau, memesParams, montantCreneau, paramsDepuis, PAS, PATHOLOGIES, PREMIER,
   resumeMois, separer, supplementsDe, type Creneau, type Mode, type ParamsPatient, type Pathologie, type Statut, type Supplement,
 } from '../lib/creneaux';
 import { eur, formatDate, libelleMois, type Donnees } from './common';
@@ -37,9 +37,11 @@ const details = (c: Creneau) =>
   ].filter(Boolean).join(' · ');
 
 /** Enregistre le créneau, ou l'efface s'il est redevenu un créneau vide de 30 min. */
-async function sauverCreneau(c: Creneau) {
+/** Enregistre le créneau ; `tous` : créneaux enregistrés, ceux qu'il recouvre (restés cachés) sont supprimés. */
+async function sauverCreneau(c: Creneau, tous: Creneau[]) {
   if (estVide(c)) await supprimer('creneaux', c.id);
   else await enregistrer('creneaux', c);
+  for (const x of creneauxSous(tous, c.date, c.debut, c.fin, c.id)) await supprimer('creneaux', x.id);
 }
 
 function BlocCreneau({ c, style, onOuvrir }: { c: Creneau; style: React.CSSProperties; onOuvrir: () => void }) {
@@ -149,7 +151,7 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
 
   const sauver = async () => {
     const x = courant();
-    await sauverCreneau(x);
+    await sauverCreneau(x, d.creneaux);
     await memoriser(x);
     await d.recharger();
     onFermer();
@@ -161,7 +163,7 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
     const r = fusionner(j, i, sens);
     if (!r) return;
     await supprimer('creneaux', r.supprime);
-    await sauverCreneau(r.fusion);
+    await sauverCreneau(r.fusion, d.creneaux.filter((y) => y.id !== r.supprime));
     await d.recharger();
     onOuvrir(r.fusion.id);
   };
@@ -179,7 +181,7 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
     setSupplements((l) => (oui ? [...l.filter((x) => x !== s), s] : l.filter((x) => x !== s)));
 
   const separation = async () => {
-    await sauverCreneau(separer(courant()));
+    await sauverCreneau(separer(courant()), d.creneaux);
     await d.recharger();
     onOuvrir(c.id);
   };

@@ -100,6 +100,26 @@ export function creneauxDuJour(date: string, enregistres: Creneau[]): Creneau[] 
   return jour;
 }
 
+/**
+ * Créneaux enregistrés tels qu'affichés dans le Calendrier : un créneau caché sous un bloc fusionné
+ * (ou hors de la grille 8h-17h30) n'est pas une séance et ne compte jamais.
+ */
+export function creneauxVisibles(creneaux: Creneau[]): Creneau[] {
+  const parDate = new Map<string, Creneau[]>();
+  for (const c of creneaux) {
+    const l = parDate.get(c.date);
+    if (l) l.push(c);
+    else parDate.set(c.date, [c]);
+  }
+  const res: Creneau[] = [];
+  for (const [date, l] of parDate) for (const c of creneauxDuJour(date, l)) if (l.includes(c)) res.push(c);
+  return res;
+}
+
+/** Créneaux enregistrés du jour qui recouvrent la plage [debut, fin[ (cachés compris), sauf `sauf`. */
+export const creneauxSous = (creneaux: Creneau[], date: string, debut: number, fin: number, sauf?: string) =>
+  creneaux.filter((c) => c.date === date && c.id !== sauf && c.debut < fin && debut < c.fin);
+
 const CHAMPS = ['statut', 'mode', 'pathologie', 'bim', 'domicile', 'supplements', 'patientPaye', 'patient', 'commentaire'] as const;
 const donnees = (c: Creneau) => ({
   statut: c.statut, mode: c.mode, pathologie: c.pathologie, bim: c.bim, domicile: c.domicile,
@@ -202,7 +222,7 @@ export interface ResumeMois {
 export function resumeMois(creneaux: Creneau[], mois: string, conventionne = true): ResumeMois {
   const vide = () => ({ totalite: 0, tiers: 0, nombre: 0, patient: 0, mutuelle: 0 });
   const r: ResumeMois = { paye: vide(), arecevoir: vide() };
-  for (const c of creneaux) {
+  for (const c of creneauxVisibles(creneaux.filter((x) => x.date.startsWith(mois)))) {
     if (!c.statut || !c.date.startsWith(mois)) continue;
     const x = r[c.statut];
     x[c.mode ?? 'tiers']++;
@@ -224,7 +244,7 @@ export function resumeMois(creneaux: Creneau[], mois: string, conventionne = tru
  */
 export function totauxCreneauxParMois(creneaux: Creneau[], annee: number, conventionne = true) {
   const res = Array.from({ length: 12 }, (_, mois) => ({ mois, carnet: 0, virements: 0, nbSeances: 0 }));
-  for (const c of creneaux) {
+  for (const c of creneauxVisibles(creneaux)) {
     if (!c.statut || !c.date.startsWith(`${annee}-`)) continue;
     const m = montantCreneau(c, conventionne);
     if (!m) continue;
@@ -233,6 +253,21 @@ export function totauxCreneauxParMois(creneaux: Creneau[], annee: number, conven
     x.nbSeances++;
   }
   return res;
+}
+
+/** Séances de l'agenda (payées ou à recevoir) par jour de l'année : nombre et total, pour vérifier l'export. */
+export function seancesParJour(creneaux: Creneau[], annee: number, conventionne = true) {
+  const parJour = new Map<string, { date: string; nombre: number; total: number }>();
+  for (const c of creneauxVisibles(creneaux)) {
+    if (!c.statut || !c.date.startsWith(`${annee}-`)) continue;
+    const m = montantCreneau(c, conventionne);
+    if (!m) continue;
+    const j = parJour.get(c.date) ?? { date: c.date, nombre: 0, total: 0 };
+    j.nombre++;
+    j.total = r2(j.total + m.patient + m.mutuelle);
+    parJour.set(c.date, j);
+  }
+  return [...parJour.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /** Jour ouvré (lun-ven) sans aucun créneau rempli ? */
@@ -262,7 +297,7 @@ export interface ProfilPatient {
 /** Séances de l'agenda regroupées par patient, avec total, payé et reste à recevoir. Les plus gros restes d'abord. */
 export function profilsPatients(creneaux: Creneau[], conventionne = true): ProfilPatient[] {
   const parNom = new Map<string, ProfilPatient>();
-  for (const c of creneaux) {
+  for (const c of creneauxVisibles(creneaux)) {
     const nom = c.patient?.trim() ?? '';
     if (!nom && !c.statut) continue;
     let p = parNom.get(nom);

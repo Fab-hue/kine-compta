@@ -21,9 +21,9 @@ describe('profils patients', () => {
       c('2026-11-03|09:00', { patient: 'DUPONT Jean', statut: 'arecevoir', mode: 'tiers' }),
       c('2026-11-04|09:00', { patient: 'DUPONT Jean', statut: 'arecevoir', mode: 'tiers', patientPaye: true }),
       c('2026-11-05|09:00', { patient: 'DUPONT Jean' }),
-      c('2026-11-02|10:00', { patient: 'MARTIN Léa', statut: 'paye', mode: 'tiers' }),
-      c('2026-11-02|11:00', { statut: 'arecevoir', mode: 'tiers' }),
-      c('2026-11-02|12:00', { commentaire: 'pause' }),
+      c('2026-11-02|10:00', { debut: 600, fin: 630, patient: 'MARTIN Léa', statut: 'paye', mode: 'tiers' }),
+      c('2026-11-02|11:00', { debut: 660, fin: 690, statut: 'arecevoir', mode: 'tiers' }),
+      c('2026-11-02|12:00', { debut: 720, fin: 750, commentaire: 'pause' }),
     ]);
     expect(p.map((x) => x.nom)).toEqual(['DUPONT Jean', 'MARTIN Léa', '']);
     const [dupont] = p;

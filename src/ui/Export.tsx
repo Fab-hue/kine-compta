@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { calculerSeances, totauxParMois, type Patient } from '../lib/calcul';
-import { totauxCreneauxParMois } from '../lib/creneaux';
+import { creneauxVisibles, seancesParJour, totauxCreneauxParMois } from '../lib/creneaux';
 import { depensesFixes, remplirExcel } from '../lib/excel';
-import { eur, MOIS, type Donnees } from './common';
+import { eur, formatDate, MOIS, type Donnees } from './common';
 
 export default function Export({ d }: { d: Donnees }) {
   const { reglages: r } = d;
@@ -13,16 +13,21 @@ export default function Export({ d }: { d: Donnees }) {
   const mois = useMemo(() => {
     const patients = new Map<string, Patient>();
     for (const p of d.patients) if (p.code) patients.set(p.id, p);
-    // agenda (créneaux payés ou à recevoir) + séances importées, au mois de la séance
+    // agenda (créneaux payés ou à recevoir) + séances importées d'un CSV, au mois de la séance.
+    // Un jour noté dans l'agenda ne reprend pas les séances CSV du même jour (sinon comptées deux fois).
     const ag = totauxCreneauxParMois(d.creneaux, annee, r.conventionne);
+    const joursAgenda = new Set(creneauxVisibles(d.creneaux).filter((c) => c.statut).map((c) => c.date));
+    const csv = d.seances.filter((s) => !joursAgenda.has(s.date));
     const r2 = (n: number) => Math.round(n * 100) / 100;
-    return totauxParMois(calculerSeances(d.seances, patients, r.conventionne), annee).map((m, i) => ({
+    return totauxParMois(calculerSeances(csv, patients, r.conventionne), annee).map((m, i) => ({
       mois: m.mois,
       carnet: r2(m.carnet + ag[i].carnet),
       virements: r2(m.virements + ag[i].virements),
       nbSeances: m.nbSeances + ag[i].nbSeances,
     }));
   }, [d.patients, d.seances, d.creneaux, r.conventionne, annee]);
+
+  const jours = useMemo(() => seancesParJour(d.creneaux, annee, r.conventionne), [d.creneaux, annee, r.conventionne]);
 
   const tickets = d.tickets.filter((t) => t.date.startsWith(String(annee)));
   const depMois = (m: number) =>
@@ -101,6 +106,17 @@ export default function Export({ d }: { d: Donnees }) {
           </tfoot>
         </table>
       </div>
+      {jours.length > 0 && (
+        <details className="detail-jours">
+          <summary>Détail par jour (agenda)</summary>
+          <p className="aide">Un bloc fusionné (1 h ou plus) compte pour une seule séance. Les créneaux libres ne comptent pas.</p>
+          <ul className="liste">
+            {jours.map((j) => (
+              <li key={j.date}>{formatDate(j.date)} : {j.nombre} séance{j.nombre > 1 ? 's' : ''} · {eur(j.total)}</li>
+            ))}
+          </ul>
+        </details>
+      )}
       <p className="aide">
         Le loyer ({eur(r.loyerMensuel)} par mois) est ajouté automatiquement dans le fichier s'il est supérieur à zéro.
       </p>

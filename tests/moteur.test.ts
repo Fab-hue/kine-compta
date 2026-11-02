@@ -249,7 +249,7 @@ describe('créneaux', () => {
     const long: Creneau = { id: 'x', date: j, debut: 600, fin: 690, statut: 'arecevoir', mode: 'totalite' };
     expect(separer(long).fin).toBe(630);
     expect(creneauxDuJour(j, [long])).toHaveLength(17);
-    expect(resumeMois([long, { ...long, id: 'y', statut: 'paye', mode: 'tiers' }], '2026-12')).toEqual({
+    expect(resumeMois([long, { ...long, id: 'y', debut: 720, fin: 750, statut: 'paye', mode: 'tiers' }], '2026-12')).toEqual({
       paye: { totalite: 0, tiers: 1, nombre: 1, patient: 6.25, mutuelle: 25.39 },
       arecevoir: { totalite: 1, tiers: 0, nombre: 1, patient: 31.64, mutuelle: 0 },
     });
@@ -326,5 +326,27 @@ describe('agenda → export et rappel 18h', () => {
     expect(ics).toContain('DTSTART:20261102T180000');
     expect(ics).toContain('RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR');
     expect(ics).toContain('BEGIN:VALARM');
+  });
+});
+
+import { creneauxSous, seancesParJour, totauxCreneauxParMois as tcm, profilsPatients as pp, resumeMois as rm } from '../src/lib/creneaux';
+
+describe('compte des séances : blocs fusionnés', () => {
+  const j = '2026-11-02';
+  const s = (id: string, debut: number, fin: number, patient: string): Creneau =>
+    ({ id, date: j, debut, fin, statut: 'paye', mode: 'tiers', patient });
+  // bloc fusionné 9h-10h + un ancien créneau 9h30 resté caché dessous + un créneau 10h
+  const cr = [s('a', 540, 600, 'TEST A'), s('b', 570, 600, 'TEST B'), s('c', 600, 630, 'TEST C')];
+
+  it('un créneau caché sous un bloc fusionné ne compte pas', () => {
+    expect(creneauxDuJour(j, cr).filter((c) => c.statut).length).toBe(2);
+    expect(tcm(cr, 2026)[10].nbSeances).toBe(2);
+    expect(rm(cr, j).paye.nombre).toBe(2);
+    expect(seancesParJour(cr, 2026)).toEqual([expect.objectContaining({ date: j, nombre: 2 })]);
+    expect(pp(cr).map((p) => p.nom)).not.toContain('TEST B');
+  });
+
+  it('creneauxSous trouve aussi les créneaux cachés', () => {
+    expect(creneauxSous(cr, j, 540, 600, 'a').map((c) => c.id)).toEqual(['b']);
   });
 });
