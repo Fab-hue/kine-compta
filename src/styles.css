@@ -74,8 +74,10 @@ progress { width: 100%; }
 .ajout { display: flex; gap: 8px; margin-bottom: 10px; }
 .ajout input { flex: 1; }
 .liste-patients { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
-.liste-patients button { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 2px; }
-.liste-patients button.actif { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.liste-patients > li > button { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 2px; }
+.liste-patients > li > button.actif { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.liste-patients li:has(.suivi-profil) { grid-column: 1 / -1; }
+.suivi-profil { margin: 6px 0 4px; scroll-margin-top: 8px; border: 2px solid var(--accent); }
 .a-configurer { color: #8a5a00; font-weight: 600; }
 .code-badge { color: var(--accent); }
 fieldset { border: 1px solid var(--bord); border-radius: 8px; margin: 10px 0; padding: 8px 10px; }

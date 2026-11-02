@@ -1,9 +1,9 @@
 // Suivi par patient (agenda) : séances, total, payé, reste à recevoir, bascule Payé / À recevoir,
 // et paramètres habituels (mode, pathologie, BIM, domicile) repris pour ses prochaines séances.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   basculerPaiement, hhmm, montantCreneau, PATHOLOGIES, profilsPatients, resteCreneau,
-  type Creneau, type Mode, type ParamsPatient, type Pathologie,
+  type Creneau, type Mode, type ProfilPatient, type ParamsPatient, type Pathologie,
 } from '../lib/creneaux';
 import { enregistrer } from '../lib/db';
 import { eur, formatDate, type Donnees } from './common';
@@ -86,12 +86,36 @@ function LigneSeance({ c, d }: { c: Creneau; d: Donnees }) {
   );
 }
 
+/** Fiche d'un patient, ouverte juste sous son nom dans la liste (visible sans défiler sur mobile). */
+function Profil({ courant, d, fermer }: { courant: ProfilPatient; d: Donnees; fermer: () => void }) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => { ref.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); }, []);
+  return (
+    <section ref={ref} className="carte suivi-profil" aria-label={`Profil de ${courant.nom || SANS_NOM}`}>
+      <div className="barre">
+        <h2>{courant.nom || SANS_NOM}</h2>
+        <button onClick={fermer}>Fermer</button>
+      </div>
+      <div className="totaux">
+        <div><span>Total</span><strong>{eur(courant.total)}</strong></div>
+        <div><span>Payé</span><strong>{eur(courant.paye)}</strong></div>
+        <div><span>Reste à recevoir</span><strong className={courant.reste > 0 ? 'suivi-reste' : ''}>{eur(courant.reste)}</strong></div>
+      </div>
+      <h3>Séances</h3>
+      <p className="aide">Clique sur Payé / À recevoir pour changer le statut d'une séance.</p>
+      <ul className="liste suivi-liste">
+        {courant.seances.map((c) => <LigneSeance key={c.id} c={c} d={d} />)}
+      </ul>
+      {courant.nom && <Parametres key={courant.nom} d={d} nom={courant.nom} />}
+    </section>
+  );
+}
+
 export default function SuiviPatients({ d }: { d: Donnees }) {
   const profils = useMemo(() => profilsPatients(d.creneaux, d.reglages.conventionne), [d.creneaux, d.reglages.conventionne]);
   const [sel, setSel] = useState<string | null>(null);
   const [filtre, setFiltre] = useState('');
   const visibles = profils.filter((p) => (p.nom || SANS_NOM).toLowerCase().includes(filtre.trim().toLowerCase()));
-  const courant = sel == null ? undefined : profils.find((p) => p.nom === sel);
   const resteTotal = profils.reduce((s, p) => s + p.reste, 0);
 
   return (
@@ -118,6 +142,7 @@ export default function SuiviPatients({ d }: { d: Donnees }) {
                     {p.reste > 0 ? <small className="suivi-reste">reste {eur(p.reste)}</small> : <small className="suivi-ajour">rien à recevoir</small>}
                     {p.aCompleter > 0 && <small className="a-configurer">{p.aCompleter} paiement{p.aCompleter > 1 ? 's' : ''} à noter</small>}
                   </button>
+                  {p.nom === sel && <Profil courant={p} d={d} fermer={() => setSel(null)} />}
                 </li>
               ))}
             </ul>
@@ -125,25 +150,6 @@ export default function SuiviPatients({ d }: { d: Donnees }) {
         )}
       </section>
 
-      {courant && (
-        <section className="carte" aria-label={`Profil de ${courant.nom || SANS_NOM}`}>
-          <div className="barre">
-            <h2>{courant.nom || SANS_NOM}</h2>
-            <button onClick={() => setSel(null)}>Fermer</button>
-          </div>
-          <div className="totaux">
-            <div><span>Total</span><strong>{eur(courant.total)}</strong></div>
-            <div><span>Payé</span><strong>{eur(courant.paye)}</strong></div>
-            <div><span>Reste à recevoir</span><strong className={courant.reste > 0 ? 'suivi-reste' : ''}>{eur(courant.reste)}</strong></div>
-          </div>
-          {courant.nom && <Parametres key={courant.nom} d={d} nom={courant.nom} />}
-          <h3>Séances</h3>
-          <p className="aide">Clique sur Payé / À recevoir pour changer le statut d'une séance.</p>
-          <ul className="liste suivi-liste">
-            {courant.seances.map((c) => <LigneSeance key={c.id} c={c} d={d} />)}
-          </ul>
-        </section>
-      )}
     </>
   );
 }
