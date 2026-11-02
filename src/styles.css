@@ -139,3 +139,6 @@ dialog.fiche::backdrop { background: rgba(0, 0, 0, 0.4); }
   .cal-nav { gap: 4px; flex-wrap: nowrap; }
   .cal-nav button { padding: 6px 9px; }
 }
+.cal-total { display: block; text-transform: none; font-weight: 400; line-height: 1.2; margin-top: 2px; }
+.cal-total strong { display: block; color: var(--accent-fonce); font-size: 0.95rem; }
+.cal-total small { display: block; font-size: 0.72rem; color: #666; }

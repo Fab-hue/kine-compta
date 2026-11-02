@@ -218,7 +218,7 @@ export function resumeMois(creneaux: Creneau[], mois: string, conventionne = tru
 
 /**
  * Totaux de l'agenda par mois de la séance (année donnée), pour l'export Excel :
- * Carnet = part patient, Virements = part mutuelle. Payés et à recevoir comptent (mois de la séance).
+ * tout le perçu (patient + mutuelle) va dans Virements (eAttest, pas de carnet papier). Payés et à recevoir comptent (mois de la séance).
  */
 export function totauxCreneauxParMois(creneaux: Creneau[], annee: number, conventionne = true) {
   const res = Array.from({ length: 12 }, (_, mois) => ({ mois, carnet: 0, virements: 0, nbSeances: 0 }));
@@ -227,10 +227,7 @@ export function totauxCreneauxParMois(creneaux: Creneau[], annee: number, conven
     const m = montantCreneau(c, conventionne);
     if (!m) continue;
     const x = res[Number(c.date.slice(5, 7)) - 1];
-    // tout ce qui est perçu pour la séance va dans la colonne de son mode de paiement
-    const total = m.patient + m.mutuelle;
-    if (c.mode === 'totalite') x.carnet = r2(x.carnet + total);
-    else x.virements = r2(x.virements + total);
+    x.virements = r2(x.virements + m.patient + m.mutuelle);
     x.nbSeances++;
   }
   return res;

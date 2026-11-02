@@ -77,16 +77,15 @@ export default function Export({ d }: { d: Donnees }) {
           <button className="lien" onClick={() => d.aller('patients')}>Configurer</button>
         </p>
       )}
-      <p className="aide">Carnet = total perçu pour les séances payées en totalité. Virements = total perçu pour les séances en tiers payant (part patient + part mutuelle). Comptés : créneaux de l'agenda payés ou à recevoir + séances importées, au mois de la séance.</p>
+      <p className="aide">Tout ce que les séances rapportent (part patient + part mutuelle, payé ou à recevoir) va dans la colonne Virements de l'Excel, au mois de la séance. La colonne Carnet (carnets papier) reste vide. Le total d'un mois = Payé + À recevoir du résumé de l'agenda.</p>
       <div className="defile">
         <table>
-          <thead><tr><th>Mois</th><th>Carnet</th><th>Virements</th><th>Séances</th><th>Dépenses (tickets)</th></tr></thead>
+          <thead><tr><th>Mois</th><th>Recettes (Virements)</th><th>Séances</th><th>Dépenses (tickets)</th></tr></thead>
           <tbody>
             {mois.map((m) => (
               <tr key={m.mois}>
                 <td>{MOIS[m.mois]}</td>
-                <td className="num">{eur(m.carnet)}</td>
-                <td className="num">{eur(m.virements)}</td>
+                <td className="num">{eur(m.carnet + m.virements)}</td>
                 <td className="num">{m.nbSeances}</td>
                 <td className="num">{eur(depMois(m.mois))}</td>
               </tr>
@@ -95,8 +94,7 @@ export default function Export({ d }: { d: Donnees }) {
           <tfoot>
             <tr>
               <th>Total</th>
-              <th className="num">{eur(tot((m) => m.carnet))}</th>
-              <th className="num">{eur(tot((m) => m.virements))}</th>
+              <th className="num">{eur(tot((m) => m.carnet + m.virements))}</th>
               <th className="num">{tot((m) => m.nbSeances)}</th>
               <th className="num">{eur(tickets.reduce((s, t) => s + t.montant, 0))}</th>
             </tr>

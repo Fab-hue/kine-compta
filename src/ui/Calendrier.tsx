@@ -249,6 +249,19 @@ const montantTexte = (c: Creneau, d: Donnees) => {
   return c.statut === 'arecevoir' && c.mode !== 'totalite' && c.patientPaye ? `mutuelle ${eur(m.mutuelle)}` : eur(m.patient + m.mutuelle);
 };
 
+/** Total gagné sur la journée : payé + à recevoir. */
+function TotalJour({ r }: { r: ReturnType<typeof resumeMois> }) {
+  const paye = Math.round((r.paye.patient + r.paye.mutuelle) * 100) / 100;
+  const attente = Math.round((r.arecevoir.patient + r.arecevoir.mutuelle) * 100) / 100;
+  if (!paye && !attente) return null;
+  return (
+    <span className="cal-total">
+      <strong>{eur(paye + attente)}</strong>
+      <small>✓ {eur(paye)} · ! {eur(attente)}</small>
+    </span>
+  );
+}
+
 export default function Calendrier({ d }: { d: Donnees }) {
   const [vue, setVue] = useState<'semaine' | 'jour'>(() => (window.matchMedia('(max-width: 699px)').matches ? 'jour' : 'semaine'));
   const [pivot, setPivot] = useState(() => iso(new Date()));
@@ -295,6 +308,7 @@ export default function Calendrier({ d }: { d: Donnees }) {
             {jours.map((j) => (
               <div className={`cal-tete ${j === aujourdhui ? 'aujourdhui' : ''}`} key={j}>
                 {vue === 'jour' ? jourLong(j) : `${JOURS[(depuisIso(j).getDay() + 6) % 7]} ${j.slice(8, 10)}/${j.slice(5, 7)}`}
+                <TotalJour r={resumeMois(d.creneaux, j, d.reglages.conventionne)} />
               </div>
             ))}
             <div className="cal-heures" style={{ height: hauteur }} aria-hidden="true">
