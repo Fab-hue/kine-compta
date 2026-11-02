@@ -3,7 +3,7 @@ import { openDB, type DBSchema } from 'idb';
 import type { Patient, Seance } from './calcul';
 import type { Depense } from './excel';
 import type { Mouvement } from './banque';
-import type { Creneau } from './creneaux';
+import type { Creneau, ParamsPatient } from './creneaux';
 
 export interface Ticket extends Depense {
   photo?: Blob;
@@ -58,9 +58,10 @@ interface Schema extends DBSchema {
   dispatchs: { key: string; value: Dispatch };
   mouvements: { key: string; value: Mouvement };
   creneaux: { key: string; value: Creneau };
+  profils: { key: string; value: ParamsPatient };
 }
 
-type Store = 'patients' | 'seances' | 'tickets' | 'dispatchs' | 'mouvements' | 'creneaux';
+type Store = 'patients' | 'seances' | 'tickets' | 'dispatchs' | 'mouvements' | 'creneaux' | 'profils';
 
 export const idDispatch = (numero: string, mutuelle?: string) =>
   `${numero}|${(mutuelle ?? '').trim().toLowerCase()}`;
@@ -69,7 +70,7 @@ export const idDispatch = (numero: string, mutuelle?: string) =>
 const ecouteursBlocage: (() => void)[] = [];
 export const surBlocage = (f: () => void) => ecouteursBlocage.push(f);
 
-const db = openDB<Schema>('kine-compta', 4, {
+const db = openDB<Schema>('kine-compta', 5, {
   // une autre fenêtre (ancienne version de l'app) garde la base ouverte : prévenir la kiné
   blocked() {
     for (const f of ecouteursBlocage) f();
@@ -92,6 +93,7 @@ const db = openDB<Schema>('kine-compta', 4, {
     if (ancienne < 3) d.createObjectStore('dispatchs', { keyPath: 'id' });
     // v4 : agenda en créneaux de 30 min (sans nom de patient)
     if (ancienne < 4) d.createObjectStore('creneaux', { keyPath: 'id' });
+    if (ancienne < 5) d.createObjectStore('profils', { keyPath: 'nom' });
   },
 });
 
@@ -123,6 +125,7 @@ export async function exporterSauvegarde() {
     dispatchs: await tous('dispatchs'),
     mouvements: await tous('mouvements'),
     creneaux: await tous('creneaux'),
+    profils: await tous('profils'),
     reglages: await lireReglages(),
   });
 }
@@ -135,5 +138,6 @@ export async function importerSauvegarde(json: string) {
   for (const x of d.dispatchs ?? []) await enregistrer('dispatchs', { ...x, id: x.id ?? idDispatch(x.numero, x.mutuelle) });
   await enregistrerMouvements(d.mouvements ?? []);
   for (const c of d.creneaux ?? []) await enregistrer('creneaux', c);
+  for (const p of d.profils ?? []) await enregistrer('profils', p);
   if (d.reglages) await ecrireReglages(d.reglages);
 }

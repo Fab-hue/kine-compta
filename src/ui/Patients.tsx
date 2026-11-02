@@ -4,6 +4,7 @@ import type { Patient } from '../lib/calcul';
 import { enregistrer, supprimer } from '../lib/db';
 import { articlesDe, calculer, codeOf, DEPLACEMENTS, findTarif, libelle, SECTIONS, tarifsDe } from '../lib/tarifs';
 import { eur, NumInput, type Donnees } from './common';
+import SuiviPatients from './SuiviPatients';
 
 const SEUIL_DEFAUT = 60;
 const CODE_SEUIL_DEFAUT = '564270';
@@ -198,8 +199,9 @@ export default function Patients({ d }: { d: Donnees }) {
 
   return (
     <div>
+      <SuiviPatients d={d} />
       <section className="carte">
-        <h2>Patients</h2>
+        <h2>Fiches tarifaires (import CSV)</h2>
         <p className="aide">Les patients arrivent automatiquement à l'import Rosa. Le nom doit être écrit exactement comme dans Rosa.</p>
         <div className="ajout">
           <input value={nom} placeholder="Ajouter un patient à la main" onChange={(e) => setNom(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void ajouter()} />

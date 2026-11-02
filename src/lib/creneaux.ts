@@ -1,6 +1,5 @@
-// Agenda en créneaux de 30 min (8h-17h), sans nom de patient (RGPD) :
-// statut payé / à recevoir, mode totalité / tiers payant, pathologie, bilan / rapport, BIM, domicile,
-// commentaire libre (initiales).
+// Agenda en créneaux de 30 min (8h-17h) : patient (nom complet, reste sur l'appareil),
+// statut payé / à recevoir, mode totalité / tiers payant, pathologie, bilan / rapport, BIM, domicile, commentaire libre.
 import { calculer, findTarif, type Montants } from './tarifs';
 
 export type Statut = 'paye' | 'arecevoir';
@@ -69,6 +68,8 @@ export interface Creneau {
   supplements?: Supplement[];
   /** tiers payant à recevoir : le patient a déjà payé sa part, seule la mutuelle doit encore payer */
   patientPaye?: boolean;
+  /** nom du patient (« NOM Prénom », comme dans Rosa) : regroupe ses séances dans l'onglet Patients */
+  patient?: string;
   commentaire?: string;
 }
 
@@ -84,8 +85,8 @@ export const idCreneau = (date: string, debut: number) => `${date}|${hhmm(debut)
 /** Créneau par défaut, non enregistré. */
 const defaut = (date: string, debut: number): Creneau => ({ id: idCreneau(date, debut), date, debut, fin: debut + PAS });
 
-/** Rien à garder : 30 min, sans statut ni commentaire (pas besoin de l'enregistrer). */
-export const estVide = (c: Creneau) => !c.statut && !c.commentaire?.trim() && c.fin - c.debut === PAS;
+/** Rien à garder : 30 min, sans statut, patient ni commentaire (pas besoin de l'enregistrer). */
+export const estVide = (c: Creneau) => !c.statut && !c.patient?.trim() && !c.commentaire?.trim() && c.fin - c.debut === PAS;
 
 /** Créneaux d'un jour : les créneaux par défaut, remplacés ou couverts par ceux enregistrés (fusionnés). */
 export function creneauxDuJour(date: string, enregistres: Creneau[]): Creneau[] {
@@ -99,12 +100,12 @@ export function creneauxDuJour(date: string, enregistres: Creneau[]): Creneau[] 
   return jour;
 }
 
-const CHAMPS = ['statut', 'mode', 'pathologie', 'bim', 'domicile', 'supplements', 'patientPaye', 'commentaire'] as const;
+const CHAMPS = ['statut', 'mode', 'pathologie', 'bim', 'domicile', 'supplements', 'patientPaye', 'patient', 'commentaire'] as const;
 const donnees = (c: Creneau) => ({
   statut: c.statut, mode: c.mode, pathologie: c.pathologie, bim: c.bim, domicile: c.domicile,
   supplements: c.supplements, patientPaye: c.patientPaye,
 });
-const aDesDonnees = (c: Creneau) => !!c.statut || !!c.commentaire?.trim();
+const aDesDonnees = (c: Creneau) => !!c.statut || !!c.patient?.trim() || !!c.commentaire?.trim();
 
 /**
  * Fusionne le créneau `i` du jour avec le précédent (-1) ou le suivant (+1).
@@ -127,6 +128,7 @@ export function fusionner(jour: Creneau[], i: number, sens: -1 | 1): { fusion: C
     fin: second.fin,
     statut: source.statut ?? autre.statut,
     mode: source.mode ?? autre.mode,
+    patient: source.patient?.trim() || autre.patient?.trim() || undefined,
     commentaire: notes.length ? notes.join(' / ') : undefined,
   };
   if (!fusion.statut) for (const k of ['mode', 'pathologie', 'bim', 'domicile', 'supplements', 'patientPaye'] as const) delete fusion[k];
@@ -235,3 +237,78 @@ export function totauxCreneauxParMois(creneaux: Creneau[], annee: number, conven
 
 /** Jour ouvré (lun-ven) sans aucun créneau rempli ? */
 export const jourVide = (date: string, creneaux: Creneau[]) => !creneaux.some((c) => c.date === date && !estVide(c));
+
+/** Ce qui reste à encaisser pour un créneau à recevoir (tiers payant avec part patient déjà payée : la mutuelle seule). */
+export function resteCreneau(c: Creneau, conventionne = true): number {
+  if (c.statut !== 'arecevoir') return 0;
+  const m = montantCreneau(c, conventionne);
+  if (!m) return 0;
+  return c.mode !== 'totalite' && c.patientPaye ? m.mutuelle : r2(m.patient + m.mutuelle);
+}
+
+export interface ProfilPatient {
+  /** nom du patient, '' pour les séances sans nom */
+  nom: string;
+  /** séances (créneaux avec ce nom), de la plus récente à la plus ancienne */
+  seances: Creneau[];
+  /** total des séances notées (payé + à recevoir) */
+  total: number;
+  paye: number;
+  reste: number;
+  /** séances sans statut (importées de Rosa, paiement pas encore noté) */
+  aCompleter: number;
+}
+
+/** Séances de l'agenda regroupées par patient, avec total, payé et reste à recevoir. Les plus gros restes d'abord. */
+export function profilsPatients(creneaux: Creneau[], conventionne = true): ProfilPatient[] {
+  const parNom = new Map<string, ProfilPatient>();
+  for (const c of creneaux) {
+    const nom = c.patient?.trim() ?? '';
+    if (!nom && !c.statut) continue;
+    let p = parNom.get(nom);
+    if (!p) parNom.set(nom, (p = { nom, seances: [], total: 0, paye: 0, reste: 0, aCompleter: 0 }));
+    p.seances.push(c);
+    if (!c.statut) {
+      p.aCompleter++;
+      continue;
+    }
+    const m = montantCreneau(c, conventionne);
+    const t = m ? r2(m.patient + m.mutuelle) : 0;
+    const reste = resteCreneau(c, conventionne);
+    p.total = r2(p.total + t);
+    p.reste = r2(p.reste + reste);
+    p.paye = r2(p.total - p.reste);
+  }
+  for (const p of parNom.values()) p.seances.sort((a, b) => b.date.localeCompare(a.date) || b.debut - a.debut);
+  return [...parNom.values()].sort((a, b) => (!a.nom ? 1 : 0) - (!b.nom ? 1 : 0) || b.reste - a.reste || a.nom.localeCompare(b.nom, 'fr'));
+}
+
+/** Bascule une séance notée entre payé et à recevoir (payée : la case « part patient déjà payée » n'a plus de sens). */
+export function basculerPaiement(c: Creneau): Creneau {
+  if (!c.statut) return c;
+  const x: Creneau = { ...c, statut: c.statut === 'paye' ? 'arecevoir' : 'paye' };
+  delete x.patientPaye;
+  return x;
+}
+
+/**
+ * Paramètres habituels d'un patient (clé = nom complet) : préremplis dans ses nouvelles séances.
+ * Les séances déjà notées gardent leurs propres valeurs ; un changement ne vaut que pour les suivantes.
+ */
+export interface ParamsPatient {
+  nom: string;
+  mode?: Mode;
+  pathologie?: Pathologie;
+  bim?: boolean;
+  domicile?: boolean;
+}
+
+/** Paramètres du patient à reprendre depuis un créneau noté. */
+export const paramsDepuis = (nom: string, c: Pick<Creneau, 'mode' | 'pathologie' | 'bim' | 'domicile'>): ParamsPatient => ({
+  nom, mode: c.mode, pathologie: c.pathologie, bim: c.bim, domicile: c.domicile,
+});
+
+/** Même paramètres ? (évite d'écrire le profil pour rien) */
+export const memesParams = (a: ParamsPatient | undefined, b: ParamsPatient) =>
+  !!a && (a.mode ?? 'tiers') === (b.mode ?? 'tiers') && (a.pathologie ?? 'courant') === (b.pathologie ?? 'courant')
+  && !!a.bim === !!b.bim && !!a.domicile === !!b.domicile;

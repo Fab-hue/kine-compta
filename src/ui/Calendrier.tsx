@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { enregistrer, supprimer } from '../lib/db';
 import {
-  creneauxDuJour, DERNIER, estVide, fusionner, hhmm, lignesCreneau, montantCreneau, PAS, PATHOLOGIES, PREMIER, resumeMois, separer,
-  supplementsDe, type Creneau, type Mode, type Pathologie, type Statut, type Supplement,
+  creneauxDuJour, DERNIER, estVide, fusionner, hhmm, lignesCreneau, memesParams, montantCreneau, paramsDepuis, PAS, PATHOLOGIES, PREMIER,
+  resumeMois, separer, supplementsDe, type Creneau, type Mode, type ParamsPatient, type Pathologie, type Statut, type Supplement,
 } from '../lib/creneaux';
 import { eur, formatDate, libelleMois, type Donnees } from './common';
+import ImportCapture from './ImportCapture';
 
 const PX_PAR_CRENEAU = 48; // hauteur d'un créneau de 30 min : 2 lignes lisibles + zone tactile confortable
 const JOURS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
@@ -22,13 +23,12 @@ const lundi = (s: string) => ajouterJours(s, -((depuisIso(s).getDay() + 6) % 7))
 const jourLong = (s: string) => `${JOURS[(depuisIso(s).getDay() + 6) % 7]} ${formatDate(s)}`;
 
 const plage = (c: Creneau) => `${hhmm(c.debut)} – ${hhmm(c.fin)}`;
-const MODE_COURT: Record<Mode, string> = { totalite: 'Totalité', tiers: 'Tiers payant' };
 const STATUT_MOT: Record<Statut, string> = { paye: 'Payé', arecevoir: 'À recevoir' };
 
 /** Détails courts d'un créneau : « TP · BIM · FA · Dom. · Rapp. ». */
-const details = (c: Creneau, avecMode = true) =>
+const details = (c: Creneau) =>
   [
-    avecMode ? (c.mode === 'totalite' ? 'Tot.' : 'TP') : '',
+    c.mode === 'totalite' ? 'Tot.' : 'TP',
     c.bim ? 'BIM' : '',
     c.pathologie && c.pathologie !== 'courant' ? PATHOLOGIES[c.pathologie].court : '',
     c.domicile ? 'Dom.' : '',
@@ -49,13 +49,19 @@ function BlocCreneau({ c, style, onOuvrir }: { c: Creneau; style: React.CSSPrope
       className={`cr-bloc ${c.statut ?? ''}`}
       style={style}
       onClick={onOuvrir}
-      aria-label={`${formatDate(c.date)} ${plage(c)}${c.statut ? ` : ${STATUT_MOT[c.statut]}, ${details(c)}` : ' : libre'}${c.commentaire ? `, ${c.commentaire}` : ''}`}
+      aria-label={`${formatDate(c.date)} ${plage(c)}${c.patient ? ` ${c.patient}` : ''}${c.statut ? ` : ${STATUT_MOT[c.statut]}, ${details(c)}` : ' : libre'}${c.commentaire ? `, ${c.commentaire}` : ''}`}
     >
       <span className="cr-ligne">
         <span className="cr-heure">{fusionne ? plage(c) : hhmm(c.debut)}</span>
         {c.statut && <span className="cr-etat">{c.statut === 'paye' ? '✓' : '!'} {details(c)}</span>}
       </span>
-      {c.commentaire && <span className="cr-note">{c.commentaire}</span>}
+      {(c.patient || c.commentaire) && (
+        <span className="cr-note">
+          {c.patient && <span className="cr-patient">{c.patient}</span>}
+          {c.patient && c.commentaire ? ' · ' : ''}
+          {c.commentaire}
+        </span>
+      )}
     </button>
   );
 }
@@ -68,16 +74,42 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
   onFermer: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const profilDe = (nom: string) => d.profils.find((p) => p.nom === nom.trim());
+  // séance pas encore notée : on part des paramètres habituels du patient ; séance notée : ses propres valeurs
+  const profilDepart = !c.statut && c.patient ? profilDe(c.patient) : undefined;
+  const depart: Partial<ParamsPatient> = profilDepart ?? c;
+  const [patient, setPatient] = useState(c.patient ?? '');
   const [statut, setStatut] = useState<Statut | ''>(c.statut ?? '');
-  const [mode, setMode] = useState<Mode>(c.mode ?? 'tiers');
-  const [pathologie, setPathologie] = useState<Pathologie>(c.pathologie ?? 'courant');
-  const [bim, setBim] = useState(!!c.bim);
-  const [domicile, setDomicile] = useState(!!c.domicile);
+  const [mode, setMode] = useState<Mode>(depart.mode ?? 'tiers');
+  const [pathologie, setPathologie] = useState<Pathologie>(depart.pathologie ?? 'courant');
+  const [bim, setBim] = useState(!!depart.bim);
+  const [domicile, setDomicile] = useState(!!depart.domicile);
+  const [repris, setRepris] = useState(!!profilDepart);
   const [supplements, setSupplements] = useState<Supplement[]>(c.supplements ?? []);
   const [patientPaye, setPatientPaye] = useState(!!c.patientPaye);
   const [commentaire, setCommentaire] = useState(c.commentaire ?? '');
   const [confirmer, setConfirmer] = useState(false);
   const i = jour.findIndex((x) => x.id === c.id);
+
+  /** Noms déjà connus (agenda + paramètres) pour l'autocomplétion. */
+  const noms = useMemo(
+    () => [...new Set([...d.creneaux.map((x) => x.patient?.trim() ?? ''), ...d.profils.map((p) => p.nom)].filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'fr')),
+    [d.creneaux, d.profils],
+  );
+
+  /** Nom choisi sur une séance pas encore notée : reprendre ses paramètres habituels. */
+  const changerPatient = (nom: string) => {
+    setPatient(nom);
+    const p = !c.statut ? profilDe(nom) : undefined;
+    if (p) {
+      setMode(p.mode ?? 'tiers');
+      setPathologie(p.pathologie ?? 'courant');
+      setBim(!!p.bim);
+      setDomicile(!!p.domicile);
+    }
+    setRepris(!!p);
+  };
 
   useEffect(() => {
     ref.current?.showModal();
@@ -96,12 +128,29 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
       if (sup.length) x.supplements = sup;
       if (statut === 'arecevoir' && mode === 'tiers' && patientPaye) x.patientPaye = true;
     }
+    if (patient.trim()) x.patient = patient.trim();
     if (commentaire.trim()) x.commentaire = commentaire.trim();
     return x;
   };
 
+  /**
+   * Retient les paramètres du patient pour ses prochaines séances, si cette séance est sa plus récente
+   * (corriger une vieille séance ne change pas le profil). Les séances déjà notées gardent leurs valeurs.
+   */
+  const memoriser = async (x: Creneau) => {
+    const nom = x.patient;
+    if (!nom || !x.statut) return;
+    const plusRecente = d.creneaux.some((y) => y.id !== x.id && y.patient?.trim() === nom && y.statut
+      && (y.date > x.date || (y.date === x.date && y.debut > x.debut)));
+    if (plusRecente) return;
+    const p = paramsDepuis(nom, x);
+    if (!memesParams(profilDe(nom), p)) await enregistrer('profils', p);
+  };
+
   const sauver = async () => {
-    await sauverCreneau(courant());
+    const x = courant();
+    await sauverCreneau(x);
+    await memoriser(x);
     await d.recharger();
     onFermer();
   };
@@ -145,6 +194,19 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
         <button onClick={() => void fusion(1)} disabled={i < 0 || i >= jour.length - 1}>↓ Fusionner avec le suivant</button>
         {c.fin - c.debut > PAS && <button onClick={() => void separation()}>Séparer en 30 min</button>}
       </div>
+
+      <label className="champ">
+        <span>Patient</span>
+        <input value={patient} maxLength={120} list="noms-patients" autoComplete="off"
+          onChange={(e) => changerPatient(e.target.value)} placeholder="NOM Prénom" />
+        <datalist id="noms-patients">{noms.map((n) => <option key={n} value={n} />)}</datalist>
+      </label>
+      {repris && (
+        <p className="aide">
+          Paramètres habituels de {patient.trim()} repris{statut ? '' : ' : choisis Payé ou À recevoir'}.
+          S'ils changent, modifie-les ici : ses prochaines séances prendront les nouveaux.
+        </p>
+      )}
 
       <fieldset>
         <legend>Paiement</legend>
@@ -217,9 +279,9 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
 
       <label className="champ">
         <span>Commentaire</span>
-        <input value={commentaire} maxLength={60} onChange={(e) => setCommentaire(e.target.value)} placeholder="ex. J.D., 2e séance" />
+        <input value={commentaire} maxLength={60} onChange={(e) => setCommentaire(e.target.value)} placeholder="ex. 2e séance" />
       </label>
-      <p className="aide">Initiales seulement, jamais de nom complet (RGPD).</p>
+      <p className="aide">Tout reste sur cet appareil : rien n'est envoyé sur internet.</p>
 
       <p>
         <button className="primaire" onClick={() => void sauver()}>Enregistrer</button>{' '}
@@ -242,21 +304,15 @@ function Fiche({ c, jour, d, onOuvrir, onFermer }: {
   );
 }
 
-const montantTexte = (c: Creneau, d: Donnees) => {
-  const m = montantCreneau(c, d.reglages.conventionne);
-  if (!m) return '';
-  // patient déjà payé : il ne reste que la part mutuelle
-  return c.statut === 'arecevoir' && c.mode !== 'totalite' && c.patientPaye ? `mutuelle ${eur(m.mutuelle)}` : eur(m.patient + m.mutuelle);
-};
-
-/** Total gagné sur la journée : payé + à recevoir. */
+/** Total gagné sur la journée : payé + à recevoir, et nombre de séances (les créneaux libres ne comptent pas). */
 function TotalJour({ r }: { r: ReturnType<typeof resumeMois> }) {
   const paye = Math.round((r.paye.patient + r.paye.mutuelle) * 100) / 100;
   const attente = Math.round((r.arecevoir.patient + r.arecevoir.mutuelle) * 100) / 100;
-  if (!paye && !attente) return null;
+  const n = r.paye.nombre + r.arecevoir.nombre;
+  if (!n) return null;
   return (
     <span className="cal-total">
-      <strong>{eur(paye + attente)}</strong>
+      <strong>{eur(paye + attente)} · {n} séance{n > 1 ? 's' : ''}</strong>
       <small>✓ {eur(paye)} · ! {eur(attente)}</small>
     </span>
   );
@@ -279,10 +335,6 @@ export default function Calendrier({ d }: { d: Donnees }) {
 
   const mois = pivot.slice(0, 7);
   const resume = resumeMois(d.creneaux, mois, d.reglages.conventionne);
-  const aRecevoir = useMemo(
-    () => d.creneaux.filter((c) => c.statut === 'arecevoir').sort((a, b) => a.date.localeCompare(b.date) || a.debut - b.debut),
-    [d.creneaux],
-  );
 
   const creneauOuvert = ouvert ? d.creneaux.find((c) => c.id === ouvert) ?? creneauxDuJour(ouvert.slice(0, 10), d.creneaux).find((c) => c.id === ouvert) : undefined;
   const jourOuvert = creneauOuvert ? creneauxDuJour(creneauOuvert.date, d.creneaux) : [];
@@ -336,7 +388,8 @@ export default function Calendrier({ d }: { d: Donnees }) {
           <span><i className="cal-puce attente" /> rouge = à recevoir</span>
           <span>✓ payé · ! à recevoir · TP = tiers payant · Tot. = totalité · Dom. = à domicile · Rapp. = rapport · Prest. = prestation liste E</span>
         </div>
-        <p className="aide">Clique sur un créneau pour noter le paiement ou le fusionner avec le précédent / le suivant.</p>
+        <p className="aide">Clique sur un créneau pour noter le patient et le paiement, ou le fusionner avec le précédent / le suivant.</p>
+        <ImportCapture d={d} jourAffiche={pivot} onDate={(j) => { setPivot(j); setVue('jour'); }} />
       </section>
 
       <section className="carte">
@@ -355,21 +408,10 @@ export default function Calendrier({ d }: { d: Donnees }) {
             <span>{resume.arecevoir.tiers} tiers payant · {resume.arecevoir.totalite} totalité</span>
           </div>
         </div>
-        <h3>Tout ce qui reste à recevoir</h3>
-        {aRecevoir.length === 0 ? (
-          <p className="vide">Rien à recevoir.</p>
-        ) : (
-          <ul className="liste">
-            {aRecevoir.map((c) => (
-              <li key={c.id}>
-                <button className="lien" onClick={() => setOuvert(c.id)}>
-                  {jourLong(c.date)} · {plage(c)}
-                </button>{' '}
-                · {[MODE_COURT[c.mode ?? 'tiers'], details(c, false), montantTexte(c, d), c.commentaire].filter(Boolean).join(' · ')}
-              </li>
-            ))}
-          </ul>
-        )}
+        <p className="aide">
+          Les séances à recevoir sont suivies par patient dans l'onglet{' '}
+          <button className="lien" onClick={() => d.aller('patients')}>Patients</button>.
+        </p>
       </section>
 
       {creneauOuvert && (

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Patient, Seance } from '../lib/calcul';
 import type { Dispatch, Reglages, Ticket } from '../lib/db';
 import type { Mouvement } from '../lib/banque';
-import type { Creneau } from '../lib/creneaux';
+import type { Creneau, ParamsPatient } from '../lib/creneaux';
 
 export interface Donnees {
   patients: Patient[];
@@ -11,6 +11,8 @@ export interface Donnees {
   dispatchs: Dispatch[];
   mouvements: Mouvement[];
   creneaux: Creneau[];
+  /** paramètres habituels par patient (nom complet) */
+  profils: ParamsPatient[];
   reglages: Reglages;
   recharger: () => Promise<void>;
   setReglages: (r: Reglages) => void;

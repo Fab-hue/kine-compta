@@ -3,7 +3,7 @@ import { ecrireReglages, lireReglages, REGLAGES_DEFAUT, surBlocage, tous, type R
 import type { Patient, Seance } from './lib/calcul';
 import type { Dispatch, Ticket } from './lib/db';
 import type { Mouvement } from './lib/banque';
-import type { Creneau } from './lib/creneaux';
+import type { Creneau, ParamsPatient } from './lib/creneaux';
 import { delaiProchainRappel, notifier, rappelDu } from './lib/rappel';
 import type { Donnees } from './ui/common';
 import Seances from './ui/Seances';
@@ -32,14 +32,15 @@ export default function App() {
   const [dispatchs, setDispatchs] = useState<Dispatch[]>([]);
   const [mouvements, setMouvements] = useState<Mouvement[]>([]);
   const [creneaux, setCreneaux] = useState<Creneau[]>([]);
+  const [profils, setProfils] = useState<ParamsPatient[]>([]);
   const [reglages, setReglagesState] = useState<Reglages>(REGLAGES_DEFAUT);
   const [pret, setPret] = useState(false);
   const [erreur, setErreur] = useState('');
 
   const recharger = useCallback(async () => {
     try {
-      const [p, s, t, di, mv, cr, r] = await Promise.all([
-        tous('patients'), tous('seances'), tous('tickets'), tous('dispatchs'), tous('mouvements'), tous('creneaux'), lireReglages(),
+      const [p, s, t, di, mv, cr, pr, r] = await Promise.all([
+        tous('patients'), tous('seances'), tous('tickets'), tous('dispatchs'), tous('mouvements'), tous('creneaux'), tous('profils'), lireReglages(),
       ]);
       setPatients(p);
       setSeances(s);
@@ -47,6 +48,7 @@ export default function App() {
       setDispatchs(di);
       setMouvements(mv);
       setCreneaux(cr);
+      setProfils(pr);
       setReglagesState(r);
       setPret(true);
     } catch (e) {
@@ -93,7 +95,7 @@ export default function App() {
   }, [reglages.rappel]);
   const rappel = pret && !!reglages.rappel && rappelDu(maintenant, creneaux);
 
-  const d: Donnees = { patients, seances, tickets, dispatchs, mouvements, creneaux, reglages, recharger, setReglages, aller: setOnglet };
+  const d: Donnees = { patients, seances, tickets, dispatchs, mouvements, creneaux, profils, reglages, recharger, setReglages, aller: setOnglet };
 
   return (
     <div className="app">
