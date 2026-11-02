@@ -320,7 +320,12 @@ function TotalJour({ r }: { r: ReturnType<typeof resumeMois> }) {
 
 export default function Calendrier({ d }: { d: Donnees }) {
   const [vue, setVue] = useState<'semaine' | 'jour'>(() => (window.matchMedia('(max-width: 699px)').matches ? 'jour' : 'semaine'));
-  const [pivot, setPivot] = useState(() => iso(new Date()));
+  const [pivot, setPivot] = useState(() => {
+    // jour choisi par un import fait depuis l'onglet Séances
+    const j = sessionStorage.getItem('kc-jour');
+    sessionStorage.removeItem('kc-jour');
+    return j ?? iso(new Date());
+  });
   const [ouvert, setOuvert] = useState<string | null>(null);
 
   const debutSemaine = lundi(pivot);

@@ -150,6 +150,7 @@ dialog.fiche::backdrop { background: rgba(0, 0, 0, 0.4); }
 .import-table input:not([type="checkbox"]) { width: 100%; min-width: 0; }
 .import-table td:nth-child(2) { min-width: 140px; }
 .import-ko { opacity: 0.6; }
+.import-confirmer { border: 1px solid var(--danger); border-radius: 8px; padding: 8px 10px; margin: 8px 0; background: #fff; }
 @media (max-width: 600px) {
   .import-table thead { display: none; }
   .import-table tr { display: grid; grid-template-columns: auto 1fr 1fr; gap: 4px; padding: 6px 0; border-bottom: 1px solid var(--bord); }

@@ -4,6 +4,7 @@ import { enregistrer, enregistrerSeances } from '../lib/db';
 import { devinerCorrespondance, extraireRdv, lireCsv, type Correspondance } from '../lib/rosa';
 import { tarifsDe, codeOf } from '../lib/tarifs';
 import { eur, formatDate, hash, libelleMois, type Donnees } from './common';
+import ImportCapture from './ImportCapture';
 
 function Import({ d }: { d: Donnees }) {
   const [csv, setCsv] = useState<{ colonnes: string[]; lignes: Record<string, string>[] } | null>(null);
@@ -76,7 +77,11 @@ function Import({ d }: { d: Donnees }) {
   return (
     <section className="carte">
       <h2>Importer l'agenda Rosa</h2>
-      <label className="bouton primaire">
+      <p className="aide">Capture d'écran de la vue Jour : les rendez-vous vont dans le Calendrier.</p>
+      <ImportCapture d={d} jourAffiche={new Date().toLocaleDateString('sv-SE')}
+        onDate={(j) => { sessionStorage.setItem('kc-jour', j); d.aller('calendrier'); }} />
+      <p className="aide">Ou un export CSV (ordinateur) :</p>
+      <label className="bouton">
         Importer un CSV Rosa
         <input type="file" accept=".csv,text/csv,text/plain" hidden onChange={(e) => { void choisir(e.target.files?.[0]); e.target.value = ''; }} />
       </label>
