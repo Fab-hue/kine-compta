@@ -4,7 +4,9 @@ import type { Patient, Seance } from './lib/calcul';
 import type { Dispatch, Ticket } from './lib/db';
 import type { Mouvement } from './lib/banque';
 import type { Creneau, ParamsPatient } from './lib/creneaux';
-import { delaiProchainRappel, notifier, rappelDu } from './lib/rappel';
+import { delaiProchainRappel, isoLocal, notifier, rappelDu } from './lib/rappel';
+import { activerPush, desactiverPush, signalerFait } from './lib/push';
+import { jourVide } from './lib/creneaux';
 import type { Donnees } from './ui/common';
 import Seances from './ui/Seances';
 import Calendrier from './ui/Calendrier';
@@ -94,6 +96,17 @@ export default function App() {
     return () => { clearTimeout(t); document.removeEventListener('visibilitychange', vu); };
   }, [reglages.rappel]);
   const rappel = pret && !!reglages.rappel && rappelDu(maintenant, creneaux);
+
+  // rappel même app fermée (push vide, voir lib/push.ts) : abonné tant que le rappel est coché ;
+  // dès que l'agenda du jour est rempli, le serveur est prévenu pour ne pas sonner ce soir
+  useEffect(() => {
+    if (!pret) return;
+    const auj = isoLocal(new Date());
+    const p = reglages.rappel
+      ? activerPush(auj).then((ok) => { if (ok && !jourVide(auj, creneaux)) return signalerFait(auj); })
+      : desactiverPush();
+    p.catch(() => { /* hors ligne : réessayé au prochain chargement */ });
+  }, [pret, reglages.rappel, creneaux]);
 
   const d: Donnees = { patients, seances, tickets, dispatchs, mouvements, creneaux, profils, reglages, recharger, setReglages, aller: setOnglet };
 

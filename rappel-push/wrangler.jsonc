@@ -1,0 +1,13 @@
+{
+  // Rappel 18h de Kiné Compta : push vide, aucune donnée patient (voir worker.js)
+  // Déploiement : CLOUDFLARE_ACCOUNT_ID=<compte> npx wrangler deploy ; clé privée : wrangler secret put VAPID_PRIVE
+  "name": "kine-rappel",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-06",
+  "workers_dev": true,
+  "triggers": { "crons": ["0 16,17 * * *"] },
+  "vars": {
+    "VAPID_PUBLIC": "BMrfY6_nIBDF3Me4xuPNy_bn8hBJSHh9VDca7ohfRqnuPk7seCid445aOKu7PJGpYbovoPM_HVxAiEvsqqfH-X8"
+  },
+  "kv_namespaces": [{ "binding": "ABOS", "id": "a6415c894c53478d87f7ac452e079e33" }]
+}

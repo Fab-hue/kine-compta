@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ecrireReglages, exporterSauvegarde, importerSauvegarde, REGLAGES_DEFAUT, supprimer, tous, type Reglages } from '../lib/db';
 import { MOIS, NumInput, type Donnees } from './common';
 import { icsRappel, isoLocal, notifier } from '../lib/rappel';
+import { abonnementPush, activerPush, pushDisponible, testerPush } from '../lib/push';
 
 export default function ReglagesTab({ d }: { d: Donnees }) {
   const r = d.reglages;
@@ -46,11 +47,30 @@ export default function ReglagesTab({ d }: { d: Donnees }) {
 
   const [perm, setPerm] = useState(() => ('Notification' in window ? Notification.permission : 'absent'));
   const lienApp = new URL(import.meta.env.BASE_URL, location.origin).href;
+  // abonnement au rappel app fermée : 'actif', 'inactif', ou 'indispo' (navigateur sans push, mode dev)
+  const [push, setPush] = useState<'actif' | 'inactif' | 'indispo' | '…'>('…');
+  const [testMsg, setTestMsg] = useState('');
+  const majPush = async () => {
+    if (!pushDisponible() || !(await navigator.serviceWorker.getRegistration())) return setPush('indispo');
+    setPush((await abonnementPush()) ? 'actif' : 'inactif');
+  };
+  useEffect(() => { void majPush().catch(() => setPush('indispo')); }, [r.rappel, perm]);
   const autoriser = async () => {
     if (!('Notification' in window)) return;
     const p = await Notification.requestPermission();
     setPerm(p);
-    if (p === 'granted') void notifier();
+    if (p !== 'granted') return;
+    setTestMsg('');
+    const ok = await activerPush(isoLocal(new Date())).catch(() => false);
+    if (!ok) setTestMsg('Activation impossible pour l\'instant (hors ligne ou navigateur sans push). Réessaie plus tard.');
+    await majPush().catch(() => setPush('indispo'));
+    void notifier();
+  };
+  const tester = async () => {
+    setTestMsg('');
+    if (push !== 'actif') { void notifier(); return; }
+    const ok = await testerPush().catch(() => false);
+    setTestMsg(ok ? 'Test envoyé par le serveur de rappel : la notification arrive dans quelques secondes.' : 'Le serveur de rappel ne répond pas (hors ligne ?).');
   };
   const telechargerIcs = () => {
     const url = URL.createObjectURL(new Blob([icsRappel(lienApp)], { type: 'text/calendar' }));
@@ -130,10 +150,22 @@ export default function ReglagesTab({ d }: { d: Donnees }) {
         </div>
         <p className="aide">
           Dans l'app : un bandeau s'affiche après 18h si rien n'est noté pour la journée. Avec les notifications autorisées,
-          une notification arrive aussi à 18h, mais seulement si l'app est ouverte (ou en arrière-plan sur ordinateur).
+          une notification arrive aussi à 18h, même app fermée (Android, ordinateur), si rien n'est noté sur cet appareil.
+        </p>
+        <p className="aide">
+          Confidentialité : le serveur de rappel envoie seulement un signal vide à 18h. C'est le téléphone qui regarde,
+          chez lui, si la journée est vide. Aucun nom, aucun horaire, aucune donnée de l'agenda ne quitte l'appareil.
         </p>
         {perm === 'granted' ? (
-          <p className="ok">Notifications autorisées. <button className="lien" onClick={() => void notifier()}>Tester</button></p>
+          <>
+            <p className="ok">Notifications autorisées. <button className="lien" onClick={() => void tester()}>Tester</button></p>
+            {r.rappel && push === 'actif' && <p className="ok">Rappel app fermée : actif sur cet appareil.</p>}
+            {r.rappel && push === 'inactif' && (
+              <p className="avertissement">Rappel app fermée pas encore actif. <button className="lien" onClick={() => void autoriser()}>Activer</button></p>
+            )}
+            {r.rappel && push === 'indispo' && <p className="aide">Ce navigateur ne permet pas le rappel app fermée : utiliser l'agenda ci-dessous.</p>}
+            {testMsg && <p className="aide">{testMsg}</p>}
+          </>
         ) : perm === 'denied' ? (
           <p className="avertissement">Notifications bloquées : les réautoriser dans les réglages du navigateur pour ce site.</p>
         ) : perm === 'absent' ? (
@@ -141,10 +173,10 @@ export default function ReglagesTab({ d }: { d: Donnees }) {
         ) : (
           <button onClick={() => void autoriser()} disabled={!r.rappel}>Autoriser les notifications</button>
         )}
-        <h3>Rappel même app fermée</h3>
+        <h3>Autre solution : l'agenda du téléphone</h3>
         <p className="aide">
-          Sans serveur (aucune donnée ne sort du téléphone), seul l'agenda du téléphone peut sonner à 18h quand l'app est fermée.
-          Ajoute une fois l'événement récurrent :
+          Si la notification n'arrive pas (iPhone sans app installée, économie de batterie), l'agenda du téléphone peut aussi
+          sonner chaque jour ouvré à 18h. Ajoute une fois l'événement récurrent :
         </p>
         <button onClick={telechargerIcs}>Ajouter à l'agenda du téléphone (.ics)</button>{' '}
         <a className="bouton" href={lienGoogle} target="_blank" rel="noopener noreferrer">Ajouter à Google Agenda</a>
