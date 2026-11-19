@@ -94,12 +94,12 @@ export default {
       await env.ABOS.delete(k);
     } else if (chemin === '/fait') {
       // l'app signale que l'agenda du jour est rempli : pas de push ce soir
-      const avant = await env.ABOS.get(k, 'json');
-      if (!avant || !/^\d{4}-\d{2}-\d{2}$/.test(corps.date ?? '')) return rep(400);
+      // pas de lecture KV ici : juste après /abonner, KV peut encore répondre « absent » (cache jusqu'à 60 s)
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(corps.date ?? '')) return rep(400);
       await env.ABOS.put(k, JSON.stringify({ endpoint: ep, fait: corps.date }));
     } else if (chemin === '/test') {
-      // push immédiat vers CET abonné seulement (bouton « Tester » des Réglages)
-      if (!(await env.ABOS.get(k))) return rep(404);
+      // push immédiat vers CET endpoint seulement (bouton « Tester » des Réglages). Pas de vérification KV
+      // (même délai de cache) : le service de push refuse de toute façon un endpoint créé sans notre clé VAPID.
       const r = await pousser(ep, env);
       return rep(r.ok ? 204 : 502);
     } else return rep(404);
